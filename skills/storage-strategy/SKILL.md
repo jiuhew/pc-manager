@@ -29,6 +29,21 @@ pwsh -File pc-manager.ps1 scan -Drives C,D,E
 
 需要最新结果时再扫描；不要为了分析删除任何文件。
 
+## 先分析机器拓扑（必做）
+
+在给任何迁移/媒体建议前，先从扫描的 `Drives` 判断：
+
+- **系统盘 / 数据盘**：`SystemDrive` 是 C: 还是其他盘；哪些盘是独立数据盘。
+- **单盘机器**（只有一块固定盘）：
+  - 不提出跨盘迁移；不要生成 `D:\`、`E:\` 等不存在的目标。
+  - 照片主库：`%USERPROFILE%\Pictures`；视频主库：`%USERPROFILE%\Videos`；音乐：`%USERPROFILE%\Music`。
+  - 归档：`%USERPROFILE%\Archive` 或用户指定目录；冷数据用外置盘/云。
+  - 重点放在清理、去重、压缩、归档，而不是迁移。
+- **多盘机器**：
+  - 只向 `Drives` 中真实存在、且空闲空间足够的数据盘提迁移。
+  - 优先数据盘，避免把系统盘作为媒体/归档目标。
+  - 目标盘空闲小于迁移体积时，不要生成不可执行的迁移建议。
+
 ## 工作流
 
 1. **读策略**
@@ -68,6 +83,11 @@ pwsh -File pc-manager.ps1 audit -ScanPath reports\scan-<timestamp>.json -Json
 - 健康分：79/100（B）
 - 总容量 / 已用 / 空闲：
 - 主要矛盾（1–3 条）：
+
+## 机器拓扑
+- 系统盘 / 数据盘：
+- 单盘 / 多盘：
+- 可用目标盘（必须来自扫描）：
 
 ## 容量与角色
 | 盘 | 角色 | 总量 | 已用 | 空闲 | 空闲率 | 状态 |
@@ -146,6 +166,7 @@ pwsh -File pc-manager.ps1 audit -ScanPath reports\scan-<timestamp>.json -Json
 - **WinSxS/Installer/Package Cache/pagefile/hiberfil**：绝不直接删除。
 - **仓库策略**：源码留在仓库；数据集、模型、构建产物、依赖缓存、虚拟机镜像移出仓库；大文件用 Git LFS/外部存储。
 - **一个根**：一台机器尽量只有一个 Work 根、一个 Media 根、一个 Archive 根、一个 Download 收件箱。
+- **单盘**：只有系统盘时，不提出跨盘迁移；媒体进 `%USERPROFILE%\Videos/Pictures`，不要把目标写成不存在的 `D:`/`E:`。
 - **manifest**：任何移动/清理都要写 CSV manifest；GUI 和 CLI 已内置。
 
 ## 常用命令

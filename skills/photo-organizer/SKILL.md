@@ -34,6 +34,13 @@ description: 当用户要整理照片/视频、按年份/事件分类、统一�
 默认读取 JPEG/TIFF 的 EXIF `DateTimeOriginal`（0x9003），比文件修改时间更准确。
 HEIC/CR3/RAW 需要系统里有 `exiftool`（安装后自动使用）；没有时回退到文件时间。可用 `-NoExif` 关闭。
 
+## 目标盘选择
+
+- 先看扫描里的 `Drives`：确认系统盘、数据盘和空闲空间。
+- **只有一块固定盘**：照片进 `%USERPROFILE%\Pictures`，视频进 `%USERPROFILE%\Videos`；不要生成 `D:\Media` / `E:\Media` 等不存在的目标。
+- **多盘**：选空闲足够的数据盘（非系统盘），目标 `<盘符>\Media\Photos` / `Videos`；不要向不存在的盘符或空间不足的盘移动。
+- 同盘移动不需要额外空间；目标已存在时合并，不覆盖，重名自动加序号。
+
 ## 工作流
 
 1. 先扫描媒体：
@@ -61,6 +68,7 @@ pwsh -File pc-manager.ps1 organize -Source E:\Photos -Execute
 ## 规则
 
 - 永远先 dry-run，再执行。
+- 单盘机器不要把媒体目标写成 `D:`/`E:`；使用用户 `Videos`/`Pictures`。
 - 只移动，不删除；重复项移到隔离区。
 - 不要移动云占位文件（OneDrive/iCloud）。
 - 处理 `杂`、`未分类` 这类目录时，按文件年月拆分，但保留同名文件组。

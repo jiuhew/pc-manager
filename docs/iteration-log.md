@@ -62,6 +62,13 @@ Real-world lessons that shaped `pc-manager`.
 - Documented the Apps overview cards, filters, icon-only uninstall, and `/api/apps/insights/:id`.
 - Version bumped to 0.2.1.
 
+## 2026-11-07 — Adaptive AI suggestions
+
+- AI suggestions now read the drive topology first: system drive, data drives, free space, and single-drive vs multi-drive.
+- Single-drive machines: no cross-drive migration; media goes to `%USERPROFILE%\Videos` and `Pictures`.
+- Migration candidates are generated only for real data drives with enough free space.
+- Updated `storage-strategy`, `photo-organizer`, and `app-migration` skills plus `docs/storage-strategy.md`.
+
 ## Tool improvements
 
 - Added cloud placeholder handling (`0x400000`, `0x1000`, `0x100000`).

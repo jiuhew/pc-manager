@@ -75,6 +75,7 @@ function Invoke-StorageAudit {
     $recommendations = [System.Collections.Generic.List[string]]::new()
     $drives = @($Scan.Drives)
     $systemDrive = $env:SystemDrive
+    $dataDrives = @($drives | Where-Object { $_.Id -and $_.Id -ne $systemDrive })
 
     $totalCap = 0.0; $totalUsed = 0.0; $totalFree = 0.0
     foreach ($d in $drives) {
@@ -194,11 +195,19 @@ function Invoke-StorageAudit {
         if ($f.Drive -eq $systemDrive) { $systemMediaGB += [double]$f.SizeGB }
     }
     if ($systemMediaGB -ge 5) {
-        Add-StorageFinding -List $findings -Id 'media-system' -Severity 'P1' -Category 'media' `
-            -Title 'Media is stored on the system drive' `
-            -Detail ("{0:N1} GB of photo/video data is on {1}. System drive space is the most expensive." -f $systemMediaGB, $systemDrive) `
-            -Evidence (($mediaFolders | Where-Object { $_.Drive -eq $systemDrive } | ForEach-Object { "$($_.Drive)\$($_.Folder)" }) -join ', ') `
-            -Action 'Archive media to a data drive using the AI media-archive suggestion, then keep only active edits locally.'
+        if ($dataDrives.Count -gt 0) {
+            Add-StorageFinding -List $findings -Id 'media-system' -Severity 'P1' -Category 'media' `
+                -Title 'Media is stored on the system drive' `
+                -Detail ("{0:N1} GB of photo/video data is on {1}. System drive space is the most expensive." -f $systemMediaGB, $systemDrive) `
+                -Evidence (($mediaFolders | Where-Object { $_.Drive -eq $systemDrive } | ForEach-Object { "$($_.Drive)\$($_.Folder)" }) -join ', ') `
+                -Action 'Archive media to a data drive using the AI media-archive suggestion, then keep only active edits locally.'
+        } else {
+            Add-StorageFinding -List $findings -Id 'media-system-single' -Severity 'P2' -Category 'media' `
+                -Title 'Media is stored on the only fixed drive' `
+                -Detail ("{0:N1} GB of photo/video data is on {1}, the only fixed drive. Cross-drive migration is not applicable." -f $systemMediaGB, $systemDrive) `
+                -Evidence (($mediaFolders | Where-Object { $_.Drive -eq $systemDrive } | ForEach-Object { "$($_.Drive)\$($_.Folder)" }) -join ', ') `
+                -Action 'Keep media in %USERPROFILE%\Videos and Pictures, organize by YYYY\YYYY-MM, and archive cold media to external storage or cloud if needed.'
+        }
     }
     if ($mediaGB -ge 20 -and $mediaFolders.Count -gt 0) {
         $organized = @($mediaFolders | Where-Object { $_.Folder -match '^(19|20)\d{2}([-_].*)?$' })
@@ -217,11 +226,16 @@ function Invoke-StorageAudit {
             }
         }
         if ($organized.Count -eq 0 -and $organizedEvidence.Count -eq 0) {
+            $mediaAction = if ($dataDrives.Count -gt 0) {
+                'Use the AI media-archive prompt or Invoke-OrganizeMedia to create YYYY\YYYY-MM folders on the data drive with a manifest.'
+            } else {
+                'Use the AI media-archive prompt or Invoke-OrganizeMedia to create YYYY\YYYY-MM folders under %USERPROFILE%\Videos and Pictures with a manifest.'
+            }
             Add-StorageFinding -List $findings -Id 'media-unorganized' -Severity 'P2' -Category 'media' `
                 -Title 'Media library is not organized by year/month' `
                 -Detail ("{0:N1} GB of photos/videos ({1:N1} GB photo, {2:N1} GB video) is not under YYYY or YYYY-MM folders." -f $mediaGB, $photoGB, $videoGB) `
                 -Evidence (($mediaFolders | Select-Object -First 6 | ForEach-Object { "$($_.Drive)\$($_.Folder)" }) -join ', ') `
-                -Action 'Use the AI media-archive prompt or Invoke-OrganizeMedia to create YYYY\YYYY-MM folders with a manifest.'
+                -Action $mediaAction
         }
     }
     $mediaDrives = @($mediaFolders | ForEach-Object { $_.Drive } | Select-Object -Unique)

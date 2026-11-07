@@ -70,6 +70,7 @@ const AUDIT_TITLES = {
   'installer-stale': '旧安装包占用',
   'confirm-review': '待确认清理项',
   'media-system': '媒体文件在系统盘',
+  'media-system-single': '媒体在唯一磁盘上',
   'media-unorganized': '媒体库未按年月归档',
   'media-scattered': '媒体目录分散',
   'workspace-scattered': '项目工作区分散',
@@ -117,12 +118,56 @@ function sourceDriveId(source) {
   return root.replace(/\\$/, '').toUpperCase();
 }
 
-function pickTargetDrive(source, drives) {
+function normalizeDrives(input) {
+  const system = systemDrive();
+  return (Array.isArray(input) ? input : [])
+    .map((drive) => {
+      const id = String(drive?.id ?? drive?.Id ?? '').toUpperCase();
+      return {
+        id,
+        freeGB: num(drive?.freeGB ?? drive?.FreeGB),
+        totalGB: num(drive?.totalGB ?? drive?.TotalGB),
+        system: drive?.system === true || id === system
+      };
+    })
+    .filter((drive) => /^[A-Z]:$/.test(drive.id));
+}
+
+function getMachineProfile(scan, drives) {
+  const list = normalizeDrives(drives);
+  const system = list.find((drive) => drive.system)?.id || systemDrive();
+  const dataDrives = list.filter((drive) => drive.id !== system && num(drive.freeGB) > 0);
+  const userRoot = scan?.User ? `${system}\\Users\\${scan.User}` : '';
+  return {
+    drives: list,
+    system,
+    dataDrives,
+    hasDataDrive: dataDrives.length > 0,
+    driveCount: list.length,
+    userRoot,
+    userVideo: userRoot ? `${userRoot}\\Videos` : '',
+    userPhoto: userRoot ? `${userRoot}\\Pictures` : ''
+  };
+}
+
+function normalizePath(value) {
+  return String(value || '').replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase();
+}
+
+function isSameOrInside(child, parent) {
+  const c = normalizePath(child);
+  const p = normalizePath(parent);
+  return Boolean(c) && Boolean(p) && (c === p || c.startsWith(`${p}\\`));
+}
+
+function pickTargetDrive(source, drives, profile) {
   const sourceId = sourceDriveId(source);
   const candidates = (Array.isArray(drives) ? drives : [])
     .filter((drive) => String(drive.id).toUpperCase() !== sourceId)
+    .filter((drive) => String(drive.id).toUpperCase() !== profile.system)
+    .filter((drive) => num(drive.freeGB) > 0)
     .sort((a, b) => num(b.freeGB) - num(a.freeGB));
-  return candidates[0] || (Array.isArray(drives) ? drives[0] : null) || { id: systemDrive(), freeGB: 0 };
+  return candidates[0] || null;
 }
 
 function mediaFolderPath(folder) {
@@ -136,7 +181,7 @@ function isArchiveLikeFolder(folder) {
   return files >= 2 && files < 50 && sizeGB >= 5 && (sizeGB / files) >= 5;
 }
 
-function makeMediaPlan(scan, drives, kind) {
+function makeMediaPlan(scan, drives, kind, profile) {
   const isVideo = kind === 'video';
   const totalGB = round2(isVideo ? scan.Media?.VideoGB : scan.Media?.PhotoGB);
   if (totalGB < 0.5) return null;
@@ -168,26 +213,56 @@ function makeMediaPlan(scan, drives, kind) {
     return null;
   }
 
-  const target = pickTargetDrive(source, drives);
-  const destination = `${String(target.id).toUpperCase()}\\Media\\${isVideo ? 'Videos' : 'Photos'}`;
+  const sourceId = sourceDriveId(source);
+  const target = pickTargetDrive(source, drives, profile);
+  let destination = '';
+  let strategy = 'cross-drive';
+  if (target) {
+    destination = `${String(target.id).toUpperCase()}\\Media\\${isVideo ? 'Videos' : 'Photos'}`;
+  } else if (sourceId === profile.system || !sourceId) {
+    // Single-drive (or no usable data drive): use the user's canonical media
+    // folders instead of inventing a second drive.
+    destination = isVideo ? profile.userVideo : profile.userPhoto;
+    strategy = 'user-library';
+  } else {
+    // Media already lives on another drive and there is no other usable drive.
+    destination = `${sourceId}\\Media\\${isVideo ? 'Videos' : 'Photos'}`;
+    strategy = 'same-drive';
+  }
+
+  // Avoid no-op plans such as C:\Users\me\Videos -> C:\Users\me\Videos.
+  if (!destination || isSameOrInside(destination, source)) return null;
+
   const kindLabel = isVideo ? '视频' : '照片';
-  const targetFreeGB = num(target.freeGB);
-  const lowSpace = knownSize && targetFreeGB > 0 && sourceGB > targetFreeGB;
+  const targetFreeGB = target ? num(target.freeGB) : 0;
+  const lowSpace = Boolean(target) && knownSize && targetFreeGB > 0 && sourceGB > targetFreeGB;
   const sizeLabel = knownSize ? `${round2(sourceGB)} GB` : '待预览';
   const measuredNote = knownSize
     ? ''
     : ' 扫描没有按文件类型拆分这个目录，实际文件数量/大小会在预览时测量。';
+  const strategyNote = strategy === 'user-library'
+    ? ` 当前没有可用的第二块数据盘：媒体将整理到用户目录 ${destination}，不做跨盘迁移。`
+    : strategy === 'same-drive'
+      ? ` 没有可用的第二块数据盘：媒体将整理到同一磁盘的 ${destination}。`
+      : ` 目标盘 ${String(target.id).toUpperCase()} 当前空闲 ${round2(targetFreeGB)} GB。`;
+  const strategyLabel = strategy === 'user-library' ? '单盘用户目录' : strategy === 'same-drive' ? '单盘同盘' : '跨盘';
 
   return {
     id: `media-${kind}`,
     type: 'organize-media',
     category: 'media',
     title: `按年月归档${kindLabel}`,
-    summary: `${kindLabel} ${sizeLabel} · ${source} → ${destination}`,
-    description: `把 ${source} 中的${kindLabel}按拍摄/修改时间整理到 ${destination}\\YYYY\\YYYY-MM。保留原文件名，重名自动加序号，并生成 manifest。${measuredNote}${lowSpace ? ` 目标盘当前空闲 ${round2(targetFreeGB)} GB，可能不足。` : ''}`,
+    summary: `${kindLabel} ${sizeLabel} · ${strategyLabel} · ${source} → ${destination}`,
+    description: `把 ${source} 中的${kindLabel}按拍摄/修改时间整理到 ${destination}\\YYYY\\YYYY-MM。保留原文件名，重名自动加序号，并生成 manifest。${strategyNote}${measuredNote}${lowSpace ? ` 目标盘当前空闲 ${round2(targetFreeGB)} GB，可能不足。` : ''}`,
     risk: lowSpace ? 'high' : 'medium',
     estimatedGB: knownSize ? round2(sourceGB) : 0,
-    params: { source, destination, kind },
+    params: { source, destination, kind, strategy },
+    adaptive: {
+      driveCount: profile.driveCount,
+      systemDrive: profile.system,
+      hasDataDrive: profile.hasDataDrive,
+      strategy
+    },
     editable: ['source', 'destination'],
     steps: [
       '扫描源目录中的媒体文件',
@@ -226,19 +301,24 @@ function outerAcknowledge(important) {
   return important ? '执行前需要额外确认标记为“需确认”的项目' : null;
 }
 
-function makeMigratePlan(item, index) {
+function makeMigratePlan(item, index, targetFreeGB = 0, targetDrive = '') {
   const sizeGB = round2(item.SizeGB);
   if (sizeGB < 1) return null;
+  const lowSpace = targetFreeGB > 0 && sizeGB > targetFreeGB;
+  const targetNote = targetDrive
+    ? ` 目标盘 ${targetDrive}${targetFreeGB > 0 ? ` 当前空闲 ${round2(targetFreeGB)} GB` : ''}。`
+    : '';
   return {
     id: `migrate-${index}`,
     type: 'migrate',
     category: 'engineering',
     title: `迁移 ${item.Name}`,
     summary: `${sizeGB} GB · ${item.Path} → ${item.SuggestedTarget}`,
-    description: item.Reason || '把大目录移动到其他磁盘，并在原位置创建 junction。',
-    risk: 'medium',
+    description: `${item.Reason || '把大目录移动到其他磁盘，并在原位置创建 junction。'}${targetNote}${lowSpace ? ' 空间可能不足。' : ''}`,
+    risk: lowSpace ? 'high' : 'medium',
     estimatedGB: sizeGB,
     params: { source: item.Path, destination: item.SuggestedTarget },
+    adaptive: { targetDrive, targetFreeGB: round2(targetFreeGB) },
     editable: ['destination'],
     steps: [
       '检查目标位置是否已存在',
@@ -256,10 +336,12 @@ function makeMigratePlan(item, index) {
 export function generatePlans(scan, drives = []) {
   if (!scan) return [];
   const plans = [];
+  const driveList = normalizeDrives(Array.isArray(drives) && drives.length ? drives : (scan.Drives || []));
+  const profile = getMachineProfile(scan, driveList);
 
-  const videoPlan = makeMediaPlan(scan, drives, 'video');
+  const videoPlan = makeMediaPlan(scan, profile.drives, 'video', profile);
   if (videoPlan) plans.push(videoPlan);
-  const photoPlan = makeMediaPlan(scan, drives, 'photo');
+  const photoPlan = makeMediaPlan(scan, profile.drives, 'photo', profile);
   if (photoPlan) plans.push(photoPlan);
 
   const safeItems = (scan.Junk || []).filter((item) => item.Safety === 'safe');
@@ -280,10 +362,20 @@ export function generatePlans(scan, drives = []) {
     risk: 'high'
   }));
 
-  (scan.Migration || []).slice(0, 4).forEach((item, index) => {
-    const plan = makeMigratePlan(item, index);
-    if (plan) plans.push(plan);
-  });
+  const migrationPlans = (scan.Migration || [])
+    .map((item, index) => {
+      const destinationDrive = sourceDriveId(item.SuggestedTarget);
+      if (!destinationDrive || destinationDrive === profile.system) return null;
+      if (destinationDrive === sourceDriveId(item.Path)) return null;
+      const target = profile.drives.find((drive) => drive.id === destinationDrive);
+      if (!target || num(target.freeGB) <= 0) return null;
+      const targetFreeGB = num(item.TargetFreeGB) > 0 ? num(item.TargetFreeGB) : num(target.freeGB);
+      if (num(item.SizeGB) > targetFreeGB) return null;
+      return makeMigratePlan(item, index, targetFreeGB, destinationDrive);
+    })
+    .filter(Boolean)
+    .slice(0, 4);
+  plans.push(...migrationPlans);
 
   const findings = Array.isArray(scan.Audit?.Findings) ? scan.Audit.Findings : [];
   const priority = findings.filter((finding) => ['P0', 'P1'].includes(finding.Severity));
@@ -325,7 +417,8 @@ export function isMediaSourceAllowed(scan, source) {
 
   if (scan.User) {
     const userRoot = `${systemDrive()}\\Users\\${scan.User}`.toLowerCase();
-    if (target === `${userRoot}\\videos` || target === `${userRoot}\\pictures`) return true;
+    if (target === `${userRoot}\\videos` || target === `${userRoot}\\pictures` ||
+        target.startsWith(`${userRoot}\\videos\\`) || target.startsWith(`${userRoot}\\pictures\\`)) return true;
   }
   return false;
 }

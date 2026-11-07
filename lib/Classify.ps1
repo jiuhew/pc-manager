@@ -104,6 +104,17 @@ function Get-MigrationCandidates {
     $minGB = [double]$Config.minMigrationGB
     $rows = [System.Collections.Generic.List[object]]::new()
 
+    # Analyze the real machine first: only propose migration when a usable
+    # non-system data drive exists.
+    $dataDrives = @($Scan.Drives | Where-Object {
+        $_.Id -and $_.Id -ne $env:SystemDrive -and [double]$_.FreeGB -gt 0
+    } | Sort-Object { [double]$_.FreeGB } -Descending)
+    if ($dataDrives.Count -eq 0) { return @() }
+
+    $targetDrive = $dataDrives[0]
+    $targetRoot = [string]$targetDrive.Id
+    $targetFreeGB = [double]$targetDrive.FreeGB
+
     $known = @(
         @{ Path = (Join-Path $env:USERPROFILE 'anaconda3'); Target = 'D:\anaconda3'; Reason = 'Conda environments are large and portable; move + junction.' },
         @{ Path = (Join-Path $env:USERPROFILE 'miniconda3'); Target = 'D:\miniconda3'; Reason = 'Conda environments are large and portable; move + junction.' },
@@ -120,13 +131,15 @@ function Get-MigrationCandidates {
         $ki = Get-Item -LiteralPath $k.Path -Force -ErrorAction SilentlyContinue
         if ($ki -and (($ki.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)) { continue }
         $mb = Get-DirSizeMB -Path $k.Path
-        if ($mb / 1024 -ge $minGB) {
+        $sizeGB = [math]::Round($mb / 1024, 2)
+        if ($sizeGB -ge $minGB -and $sizeGB -le $targetFreeGB) {
             $rows.Add([pscustomobject]@{
-                Name           = Split-Path $k.Path -Leaf
-                Path           = $k.Path
-                SizeGB         = [math]::Round($mb / 1024, 2)
-                SuggestedTarget = $k.Target
-                Reason         = $k.Reason
+                Name            = Split-Path $k.Path -Leaf
+                Path            = $k.Path
+                SizeGB          = $sizeGB
+                SuggestedTarget = ($k.Target -replace '^[A-Za-z]:', $targetRoot)
+                TargetFreeGB    = [math]::Round($targetFreeGB, 2)
+                Reason          = $k.Reason
             })
         }
     }
@@ -139,12 +152,14 @@ function Get-MigrationCandidates {
             ForEach-Object {
                 if (($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { return }
                 $mb = Get-DirSizeMB -Path $_.FullName
-                if ($mb / 1024 -ge $minGB) {
+                $sizeGB = [math]::Round($mb / 1024, 2)
+                if ($sizeGB -ge $minGB -and $sizeGB -le $targetFreeGB) {
                     $rows.Add([pscustomobject]@{
                         Name            = "WSL: $($_.Name)"
                         Path            = $_.FullName
-                        SizeGB          = [math]::Round($mb / 1024, 2)
-                        SuggestedTarget = 'D:\wsl'
+                        SizeGB          = $sizeGB
+                        SuggestedTarget = "$targetRoot\wsl"
+                        TargetFreeGB    = [math]::Round($targetFreeGB, 2)
                         Reason          = 'Use wsl --export / --import and restore the default user.'
                     })
                 }
@@ -155,12 +170,13 @@ function Get-MigrationCandidates {
     foreach ($d in $Scan.Drives) {
         if ($d.Id -ne $env:SystemDrive) { continue }
         foreach ($f in $d.TopFolders) {
-            if ($f.Name -match '^(Steam|SteamLibrary|Epic Games|GOG Games|Games|XboxGames)$' -and $f.SizeGB -ge $minGB) {
+            if ($f.Name -match '^(Steam|SteamLibrary|Epic Games|GOG Games|Games|XboxGames)$' -and $f.SizeGB -ge $minGB -and $f.SizeGB -le $targetFreeGB) {
                 $rows.Add([pscustomobject]@{
                     Name            = $f.Name
                     Path            = "$($d.Id)\$($f.Name)"
                     SizeGB          = $f.SizeGB
-                    SuggestedTarget = 'D:\Games'
+                    SuggestedTarget = "$targetRoot\Games"
+                    TargetFreeGB    = [math]::Round($targetFreeGB, 2)
                     Reason          = 'Game libraries can be moved through the launcher or via move + junction.'
                 })
             }
@@ -216,6 +232,11 @@ function Get-Recommendations {
         $out.Add(("Cleanable cache/leftovers: {0:N1} GB. Review the junk table and run clean with -Execute." -f $junkTotal))
     }
 
+    $singleDrive = @($Scan.Drives | Where-Object { $_.Id }).Count -le 1
+    if ($singleDrive) {
+        $out.Add('Single-drive machine: no cross-drive migration. Keep media in %USERPROFILE%\Videos and Pictures; use cleanup, archive, or external storage for cold data.')
+    }
+
     foreach ($m in @($Migration)) {
         if ($m.SizeGB -ge 5) {
             $out.Add(("Migration candidate: {0} ({1:N1} GB) -> {2}" -f $m.Path, $m.SizeGB, $m.SuggestedTarget))
@@ -223,7 +244,11 @@ function Get-Recommendations {
     }
 
     if ($Media.PhotoGB + $Media.VideoGB -ge 50) {
-        $out.Add(("Media library: {0:N1} GB photos + {1:N1} GB video. Use the photo-organizer skill for YYYY/YYYY-MM naming." -f $Media.PhotoGB, $Media.VideoGB))
+        if ($singleDrive) {
+            $out.Add(("Media library: {0:N1} GB photos + {1:N1} GB video. Organize into %USERPROFILE%\Pictures and Videos by YYYY/YYYY-MM; do not target a nonexistent second drive." -f $Media.PhotoGB, $Media.VideoGB))
+        } else {
+            $out.Add(("Media library: {0:N1} GB photos + {1:N1} GB video. Use the photo-organizer skill for YYYY/YYYY-MM naming." -f $Media.PhotoGB, $Media.VideoGB))
+        }
     }
 
     foreach ($d in $Scan.Drives) {

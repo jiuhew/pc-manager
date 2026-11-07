@@ -5,15 +5,21 @@ description: 当用户要把软件、开发环境、游戏或数据从 C 盘迁�
 
 # App Migration
 
+## 迁移前检查
+
+- 先确认存在第二块固定盘，且目标盘空闲空间 >= 迁移体积。
+- 只有一块盘时，不要建议跨盘迁移；改为清理、归档、压缩，或使用外置盘/云。
+- 目标盘必须来自扫描的 `Drives` 列表；不要写死 `D:`。
+
 ## 通用目录迁移
 
 ```powershell
 # 1. 关闭占用进程
 # 2. 预览
-pwsh -File pc-manager.ps1 organize -Source "C:\path\app" -Destination "D:\path\app"
+pwsh -File pc-manager.ps1 organize -Source "C:\path\app" -Destination "<目标盘>:\path\app"
 
 # 3. 执行（移动 + 原路径 junction）
-pwsh -File pc-manager.ps1 organize -Source "C:\path\app" -Destination "D:\path\app" -Execute
+pwsh -File pc-manager.ps1 organize -Source "C:\path\app" -Destination "<目标盘>:\path\app" -Execute
 ```
 
 ## 常见场景
@@ -22,9 +28,9 @@ pwsh -File pc-manager.ps1 organize -Source "C:\path\app" -Destination "D:\path\a
 |---|---|
 | Anaconda / Miniconda | 移动整个安装目录 + junction，保留 PATH |
 | Docker Desktop | 移动 `%LOCALAPPDATA%\Docker\wsl` + junction，或在设置里改 Disk image location |
-| WSL 发行版 | `wsl --export` → `--unregister` → `--import` 到 D → `/etc/wsl.conf` 恢复 `[user] default` |
+| WSL 发行版 | `wsl --export` → `--unregister` → `--import` 到目标盘 → `/etc/wsl.conf` 恢复 `[user] default` |
 | GitHub 仓库 | 直接移动，git 可移植 |
-| CUDA / Windows SDK / VS | 重装到 D 更稳 |
+| CUDA / Windows SDK / VS | 重装到目标盘更稳 |
 | Store 应用 | 设置 → 应用 → 移动；新应用位置在“新内容的保存位置” |
 | 游戏 | 通过 Steam/Epic 的库管理移动 |
 
@@ -39,7 +45,7 @@ pwsh -File pc-manager.ps1 organize -Source "C:\path\app" -Destination "D:\path\a
 
 ```powershell
 conda --version
-git -C D:\GitHub\repo status
+git -C "<目标盘>:\GitHub\repo" status
 docker info
 wsl -d Ubuntu-24.04 -- whoami
 ```
