@@ -1,0 +1,7 @@
+{
+  "largeFileMB": 500,
+  "maxLargeFiles": 200,
+  "maxExtensionItems": 80,
+  "installerAgeDays": 30,
+  "minMigrationGB": 5
+}
