@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('scan', 'report', 'audit', 'clean', 'organize', 'dedupe', 'skills', 'version', 'help')]
+    [ValidateSet('scan', 'report', 'audit', 'clean', 'empty-dirs', 'organize', 'dedupe', 'skills', 'version', 'help')]
     [string]$Command = 'help',
 
     [string[]]$Drives,
@@ -15,6 +15,8 @@ param(
     [switch]$Execute,
     [switch]$Admin,
     [string]$Category,
+    [ValidateSet('cache', 'all-cache')]
+    [string]$Batch = 'cache',
     [string]$Source,
     [string]$Destination,
     [switch]$Install,
@@ -47,6 +49,7 @@ Usage:
   pc-manager report -ScanPath reports\scan-xxx.json [-Output report.md] [-Format md|html]
   pc-manager audit -ScanPath reports\scan-xxx.json [-Output audit.md] [-Json]
   pc-manager clean [-ScanPath scan.json] [-Category cache|system|installers|orphans|recycle] [-Execute] [-Admin]
+  pc-manager empty-dirs -ScanPath scan.json [-Batch cache|all-cache] [-Execute]
   pc-manager organize -Source C:\Path -Destination D:\Path [-Execute]
   pc-manager organize -Source E:\Photos [-NoExif] [-Execute]  # photo year/month organizer
   pc-manager dedupe -Source D:\SomeFolder [-Execute] [-KeepDuplicates]
@@ -125,6 +128,12 @@ switch ($Command) {
         }
         if ($Category) { $junk = @($junk | Where-Object { $_.Category -eq $Category }) }
         Invoke-Clean -Junk $junk -Execute:$Execute -Admin:$Admin
+    }
+
+    'empty-dirs' {
+        if (-not $ScanPath) { throw 'empty-dirs requires -ScanPath <scan.json>' }
+        $scan = Get-ScanFromPath $ScanPath
+        Invoke-EmptyDirCleanup -Scan $scan -Batch $Batch -Execute:$Execute
     }
 
     'organize' {

@@ -74,7 +74,11 @@ pwsh -File pc-manager.ps1 clean -ScanPath reports\scan-<timestamp>.json
 # 4. 确认后清理
 pwsh -File pc-manager.ps1 clean -ScanPath reports\scan-<timestamp>.json -Execute
 
-# 5. 安装 AI skills
+# 5. 空目录清理（默认 dry-run；Batch all-cache = 已知缓存根 + AppData 缓存/临时/日志）
+pwsh -File pc-manager.ps1 empty-dirs -ScanPath reports\scan-<timestamp>.json -Batch all-cache
+pwsh -File pc-manager.ps1 empty-dirs -ScanPath reports\scan-<timestamp>.json -Batch all-cache -Execute
+
+# 6. 安装 AI skills
 pwsh -File pc-manager.ps1 skills -Install
 ```
 

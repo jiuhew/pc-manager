@@ -315,6 +315,227 @@ function Invoke-PcAppUninstall {
     }
 }
 
+function Get-PcEmptyDirCandidates {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$Scan,
+        [ValidateSet('cache', 'all-cache')]
+        [string]$Batch = 'cache'
+    )
+
+    $cacheRoots = @(
+        (Join-Path $env:LOCALAPPDATA 'Temp'),
+        (Join-Path $env:LOCALAPPDATA 'npm-cache'),
+        (Join-Path $env:LOCALAPPDATA 'pip'),
+        (Join-Path $env:APPDATA 'Code\logs')
+    ) | ForEach-Object { ([System.IO.Path]::GetFullPath($_)).TrimEnd('\') + '\' }
+
+    $cachePattern = '\\(Cache|cache|Code Cache|GPUCache|GrShaderCache|ShaderCache|Temp|temp|tmp|Tmp|Logs|logs|Crashpad|CrashDumps|blob_storage|CachedData|CacheStorage|Service Worker|index-dir)(\\|$)'
+    $userAppData = ([System.IO.Path]::GetFullPath((Join-Path $env:USERPROFILE 'AppData'))).TrimEnd('\') + '\'
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $items = [System.Collections.Generic.List[object]]::new()
+
+    foreach ($drive in @($Scan.Drives)) {
+        foreach ($raw in @($drive.EmptyDirs)) {
+            if (-not $raw) { continue }
+            try { $full = [System.IO.Path]::GetFullPath([string]$raw).TrimEnd('\') } catch { continue }
+            if (-not $full.StartsWith($userAppData, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+            if ($full -match '(?i)\\(Packages|Tencent|xwechat|WeChat|OneDrive|ai\.opencode\.desktop)(\\|$)') { continue }
+            if ($full -match '(?i)\\\.git(\\|$)') { continue }
+
+            $inRoot = $false
+            $root = ''
+            foreach ($r in $cacheRoots) {
+                if ($full.StartsWith($r, [System.StringComparison]::OrdinalIgnoreCase)) { $inRoot = $true; $root = $r.TrimEnd('\'); break }
+            }
+            $isCachePath = $full -match $cachePattern
+            if ($Batch -eq 'cache') {
+                if (-not $inRoot) { continue }
+            } elseif (-not $inRoot -and -not $isCachePath) {
+                continue
+            }
+
+            if (-not $seen.Add($full)) { continue }
+            $items.Add([pscustomobject]@{
+                Path   = $full
+                Batch  = $Batch
+                Root   = $root
+                Depth  = ($full.Split('\').Count)
+                Reason = if ($inRoot) { 'known cache root' } else { 'cache/temp/log path' }
+            })
+        }
+    }
+
+    return @($items | Sort-Object Depth -Descending)
+}
+
+function Test-PcEmptyDirSafe {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path -ErrorAction SilentlyContinue)) {
+        return [pscustomobject]@{ Status = 'skipped-missing'; Detail = 'Path not found'; Attributes = ''; LastWriteTime = $null }
+    }
+
+    try {
+        $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    } catch {
+        return [pscustomobject]@{ Status = 'failed'; Detail = $_.Exception.Message; Attributes = ''; LastWriteTime = $null }
+    }
+    if (-not $item.PSIsContainer) {
+        return [pscustomobject]@{ Status = 'skipped-not-directory'; Detail = 'Not a directory'; Attributes = [int]$item.Attributes; LastWriteTime = $item.LastWriteTime }
+    }
+    if (Test-PcProtectedPath -Path $Path) {
+        return [pscustomobject]@{ Status = 'skipped-protected'; Detail = 'Protected system path'; Attributes = [int]$item.Attributes; LastWriteTime = $item.LastWriteTime }
+    }
+
+    $attr = [int]$item.Attributes
+    if (($attr -band 0x400) -ne 0) {
+        return [pscustomobject]@{ Status = 'skipped-reparse'; Detail = 'Reparse point'; Attributes = $attr; LastWriteTime = $item.LastWriteTime }
+    }
+    if (($attr -band $script:CloudFlags) -ne 0) {
+        return [pscustomobject]@{ Status = 'skipped-cloud'; Detail = 'Cloud placeholder'; Attributes = $attr; LastWriteTime = $item.LastWriteTime }
+    }
+
+    $cursor = Split-Path -Parent $Path
+    while ($cursor -and $cursor.Length -gt 3) {
+        try {
+            $a = [int](Get-Item -LiteralPath $cursor -Force -ErrorAction Stop).Attributes
+            if (($a -band 0x400) -ne 0) {
+                return [pscustomobject]@{ Status = 'skipped-ancestor-link'; Detail = "Reparse ancestor: $cursor"; Attributes = $attr; LastWriteTime = $item.LastWriteTime }
+            }
+            if (($a -band $script:CloudFlags) -ne 0) {
+                return [pscustomobject]@{ Status = 'skipped-ancestor-cloud'; Detail = "Cloud ancestor: $cursor"; Attributes = $attr; LastWriteTime = $item.LastWriteTime }
+            }
+        } catch {
+            return [pscustomobject]@{ Status = 'failed'; Detail = $_.Exception.Message; Attributes = $attr; LastWriteTime = $item.LastWriteTime }
+        }
+        $cursor = Split-Path -Parent $cursor
+    }
+
+    try {
+        $entries = @([System.IO.Directory]::EnumerateFileSystemEntries($Path)).Count
+    } catch {
+        return [pscustomobject]@{ Status = 'failed'; Detail = $_.Exception.Message; Attributes = $attr; LastWriteTime = $item.LastWriteTime }
+    }
+    if ($entries -ne 0) {
+        return [pscustomobject]@{ Status = 'skipped-not-empty'; Detail = "$entries entries now"; Attributes = $attr; LastWriteTime = $item.LastWriteTime }
+    }
+
+    return [pscustomobject]@{ Status = 'ready'; Detail = 'Empty at check time'; Attributes = $attr; LastWriteTime = $item.LastWriteTime }
+}
+
+function Invoke-EmptyDirCleanup {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$Scan,
+        [ValidateSet('cache', 'all-cache')]
+        [string]$Batch = 'cache',
+        [switch]$Execute,
+        [string]$ManifestRoot
+    )
+
+    $candidates = @(Get-PcEmptyDirCandidates -Scan $Scan -Batch $Batch)
+    if ($candidates.Count -eq 0) {
+        Write-Host 'No empty-directory candidates.'
+        return [pscustomobject]@{
+            Batch = $Batch; Execute = [bool]$Execute; CandidateCount = 0; Deleted = 0; Skipped = 0; Failed = 0;
+            ManifestPath = $null; PreviewPath = $null; Items = @()
+        }
+    }
+
+    $rows = [System.Collections.Generic.List[object]]::new()
+    $index = 0
+    $deleted = 0
+    $skipped = 0
+    $failed = 0
+
+    foreach ($c in $candidates) {
+        $index++
+        $check = Test-PcEmptyDirSafe -Path $c.Path
+        $status = $check.Status
+        $errorText = ''
+        if ($status -eq 'ready') {
+            if ($Execute) {
+                try {
+                    [System.IO.Directory]::Delete($c.Path, $false)
+                    $status = 'deleted'
+                    $deleted++
+                } catch {
+                    $status = 'failed'
+                    $errorText = $_.Exception.Message
+                    $failed++
+                }
+            } else {
+                $status = 'would-delete'
+            }
+        } elseif ($status -eq 'failed') {
+            $failed++
+        } else {
+            $skipped++
+        }
+
+        $rows.Add([pscustomobject]@{
+            Index         = $index
+            Path          = $c.Path
+            Batch         = $Batch
+            Root          = $c.Root
+            Depth         = $c.Depth
+            Status        = $status
+            Detail        = if ($errorText) { $errorText } else { $check.Detail }
+            Attributes    = $check.Attributes
+            LastWriteTime = $check.LastWriteTime
+            ProcessedAt   = (Get-Date).ToString('s')
+        })
+    }
+
+    $pcRoot = if ($script:PcRoot) { $script:PcRoot } else { (Get-Location).Path }
+    $outRoot = if ($ManifestRoot) { $ManifestRoot } else { Join-Path $pcRoot (Join-Path 'reports\empty-dirs' (Get-Date -Format 'yyyyMMdd-HHmmss')) }
+    New-Item -ItemType Directory -Path $outRoot -Force | Out-Null
+    $csvPath = Join-Path $outRoot $(if ($Execute) { 'manifest.csv' } else { 'preview.csv' })
+    $rows | Export-Csv -LiteralPath $csvPath -NoTypeInformation -Encoding utf8BOM
+
+    $readyCount = @($rows | Where-Object { $_.Status -in @('ready', 'would-delete', 'deleted') }).Count
+    $summary = [pscustomobject]@{
+        Batch          = $Batch
+        Execute        = [bool]$Execute
+        GeneratedAt    = (Get-Date).ToString('s')
+        CandidateCount = $rows.Count
+        Ready          = $readyCount
+        Deleted        = $deleted
+        Skipped        = $skipped
+        Failed         = $failed
+        CsvPath        = $csvPath
+        ByStatus       = @($rows | Group-Object Status | Sort-Object Name | ForEach-Object { [pscustomobject]@{ Status = $_.Name; Count = $_.Count } })
+        ByRoot         = @($rows | Group-Object Root | Sort-Object Name | ForEach-Object { [pscustomobject]@{ Root = $_.Name; Count = $_.Count } })
+    }
+    $summaryPath = Join-Path $outRoot 'summary.json'
+    $summary | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
+
+    Write-Host ("Empty directories ({0}): candidates {1}, ready {2}, deleted {3}, skipped {4}, failed {5}" -f $Batch, $rows.Count, $readyCount, $deleted, $skipped, $failed)
+    $rows | Group-Object Root | Sort-Object Name | ForEach-Object {
+        Write-Host ("  {0}: {1}" -f $_.Name, $_.Count)
+    }
+    if (-not $Execute) {
+        Write-Host 'Dry run only. Re-run with -Execute to delete the ready directories.'
+    }
+    Write-Host "CSV:     $csvPath"
+    Write-Host "Summary: $summaryPath"
+
+    return [pscustomobject]@{
+        Batch        = $Batch
+        Execute      = [bool]$Execute
+        CandidateCount = $rows.Count
+        Deleted      = $deleted
+        Skipped      = $skipped
+        Failed       = $failed
+        ManifestPath = if ($Execute) { $csvPath } else { $null }
+        PreviewPath  = if (-not $Execute) { $csvPath } else { $null }
+        SummaryPath  = $summaryPath
+        Items        = @($rows)
+    }
+}
+
 function Invoke-Dedupe {
     [CmdletBinding()]
     param(
