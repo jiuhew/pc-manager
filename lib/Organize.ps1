@@ -42,7 +42,8 @@ function Invoke-OrganizePhotos {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$Source,
-        [switch]$Execute
+        [switch]$Execute,
+        [switch]$NoExif
     )
 
     $rootItem = Get-Item -LiteralPath $Source -Force -ErrorAction Stop
@@ -89,7 +90,9 @@ function Invoke-OrganizePhotos {
             & $move $dir.FullName (Join-Path $root "归档\$($dir.Name)") 'folder'
             continue
         }
-        $monthGroup = $files | Group-Object { $_.LastWriteTime.ToString('yyyy-MM') } | Sort-Object Count -Descending | Select-Object -First 1
+        $monthGroup = $files |
+            ForEach-Object { (Get-MediaDate -File $_ -NoExif:$NoExif).ToString('yyyy-MM') } |
+            Group-Object | Sort-Object Count -Descending | Select-Object -First 1
         $month = $monthGroup.Name
         $year = $month.Substring(0, 4)
         $safeName = $dir.Name -replace '[\\/:*?"<>|]', '_'
@@ -100,7 +103,7 @@ function Invoke-OrganizePhotos {
     Write-Host '[pc-manager] scanning top-level files ...'
     foreach ($file in (Get-ChildItem -LiteralPath $root -Force -File -ErrorAction SilentlyContinue)) {
         if ($file.Name -match '^README') { continue }
-        $month = $file.LastWriteTime.ToString('yyyy-MM')
+        $month = (Get-MediaDate -File $file -NoExif:$NoExif).ToString('yyyy-MM')
         $year = $month.Substring(0, 4)
         $target = Join-Path $root "$year\${month}_未分类\$($file.Name)"
         & $move $file.FullName $target 'file'

@@ -122,6 +122,23 @@ function New-MarkdownReport {
     return $sb.ToString()
 }
 
+function New-HtmlBars {
+    param([object[]]$Rows, [string]$Label, [string]$Value, [string]$Unit = 'GB')
+    if (-not $Rows) { return '' }
+    $max = ($Rows | Measure-Object -Property $Value -Maximum).Maximum
+    if (-not $max -or $max -le 0) { return '' }
+    $sb = [System.Text.StringBuilder]::new()
+    [void]$sb.AppendLine('<div class="bars">')
+    foreach ($r in $Rows) {
+        $v = [double]$r.$Value
+        $pct = [math]::Round($v / $max * 100, 1)
+        $lbl = [System.Net.WebUtility]::HtmlEncode([string]$r.$Label)
+        [void]$sb.AppendLine(("<div class='bar'><span class='bar-label'>{0}</span><span class='bar-track'><span class='bar-fill' style='width:{1}%'></span></span><span class='bar-value'>{2:N1} {3}</span></div>" -f $lbl, $pct, $v, $Unit))
+    }
+    [void]$sb.AppendLine('</div>')
+    return $sb.ToString()
+}
+
 function New-HtmlReport {
     [CmdletBinding()]
     param([Parameter(Mandatory)]$Scan)
@@ -135,6 +152,12 @@ h1{margin-bottom:4px} h2{margin-top:32px} table{border-collapse:collapse;margin:
 th,td{border:1px solid #d1d5db;padding:6px 10px;text-align:left;font-size:13px}
 th{background:#e5e7eb} tr:nth-child(even){background:#f3f4f6}
 code{background:#eef2ff;padding:1px 4px;border-radius:3px}
+.bars{margin:8px 0 20px}
+.bar{display:flex;align-items:center;gap:8px;margin:4px 0;font-size:13px}
+.bar-label{width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar-track{flex:1;background:#e5e7eb;height:14px;border-radius:3px;overflow:hidden}
+.bar-fill{display:block;height:100%;background:#3b82f6}
+.bar-value{width:90px;text-align:right;color:#4b5563}
 </style>
 '@
     $esc = { param($s) [System.Net.WebUtility]::HtmlEncode([string]$s) }
@@ -163,9 +186,11 @@ code{background:#eef2ff;padding:1px 4px;border-radius:3px}
     foreach ($d in $Scan.Drives) {
         [void]$html.AppendLine(("<h2>Drive {0}</h2>" -f (& $esc $d.Id)))
         [void]$html.AppendLine('<h3>Top folders</h3>')
+        [void]$html.AppendLine((New-HtmlBars -Rows ($d.TopFolders | Select-Object -First 10) -Label 'Name' -Value 'SizeGB' -Unit 'GB'))
         [void]$html.AppendLine((($d.TopFolders | Select-Object -First 15 Name, SizeGB, Files | ConvertTo-Html -Fragment) -join "`n"))
         if ($d.Extensions.Count -gt 0) {
             [void]$html.AppendLine('<h3>File types</h3>')
+            [void]$html.AppendLine((New-HtmlBars -Rows ($d.Extensions | Select-Object -First 10) -Label 'Ext' -Value 'SizeGB' -Unit 'GB'))
             [void]$html.AppendLine((($d.Extensions | Select-Object -First 15 Ext, Kind, Count, SizeGB | ConvertTo-Html -Fragment) -join "`n"))
         }
     }

@@ -26,6 +26,8 @@ function Test-IsAdmin {
 }
 
 $script:CloudFlags = 0x400000 -bor 0x1000 -bor 0x100000
+$script:ExifLoaded = $false
+$script:MediaDateCache = @{}
 
 function Get-DirSizeMB {
     param([Parameter(Mandatory)][string]$Path, [switch]$LocalOnly)
@@ -249,5 +251,56 @@ function Get-OrphanInfo {
     }
     $result.AppxData = $appx | Sort-Object SizeMB -Descending
 
+    return $result
+}
+
+function Get-MediaDate {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][System.IO.FileInfo]$File,
+        [switch]$NoExif
+    )
+
+    $key = $File.FullName
+    if ($script:MediaDateCache.ContainsKey($key)) { return $script:MediaDateCache[$key] }
+
+    $result = $File.LastWriteTime
+    if (-not $NoExif) {
+        $ext = $File.Extension.ToLowerInvariant()
+        if ($ext -in @('.jpg', '.jpeg', '.tif', '.tiff')) {
+            if (-not $script:ExifLoaded) {
+                try {
+                    Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+                    $script:ExifLoaded = $true
+                } catch {
+                    $script:ExifLoaded = $false
+                }
+            }
+            if ($script:ExifLoaded) {
+                $img = $null
+                try {
+                    $img = [System.Drawing.Image]::FromFile($File.FullName)
+                    foreach ($id in @(0x9003, 0x9004, 0x0132)) {
+                        try {
+                            $prop = $img.GetPropertyItem($id)
+                            $text = [System.Text.Encoding]::ASCII.GetString($prop.Value).Trim([char]0).Trim()
+                            $dt = [datetime]::MinValue
+                            if ([datetime]::TryParseExact($text, 'yyyy:MM:dd HH:mm:ss',
+                                    [System.Globalization.CultureInfo]::InvariantCulture,
+                                    [System.Globalization.DateTimeStyles]::None, [ref]$dt)) {
+                                $result = $dt
+                                break
+                            }
+                        } catch { }
+                    }
+                } catch { }
+                finally {
+                    if ($img) { $img.Dispose() }
+                }
+            }
+        }
+    }
+
+    $script:MediaDateCache[$key] = $result
     return $result
 }

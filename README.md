@@ -48,7 +48,7 @@
 - **垃圾分级**：`safe` / `elevated` / `confirm` / `review`，区分用户缓存、系统缓存、回收站、旧安装包、孤立残留。
 - **迁移建议**：Anaconda、WSL、Docker、GitHub、CUDA、SDK、游戏库等。
 - **重复文件检测**：大小分组 + SHA-256，重复项移动到隔离区，不直接删除。
-- **照片整理**：按 `YYYY\YYYY-MM_事件` 归类，保留原始文件名，生成 manifest。
+- **照片整理**：优先读取 EXIF 拍摄时间，按 `YYYY\YYYY-MM_事件` 归类，保留原始文件名，生成 manifest。
 - **AI Skill 库**：扫描、清理、照片、文档、去重、迁移 6 个 skill，可直接安装到 OpenCode。
 - **纯 PowerShell**：Windows 原生，无需 Python/Node 运行时。
 

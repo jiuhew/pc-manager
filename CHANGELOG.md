@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Photo organizer reads EXIF `DateTimeOriginal` (0x9003) for JPEG/TIFF and falls back to the file timestamp; use `-NoExif` to disable.
+
 ## [0.1.0] - 2026-11-07
 
 ### Added

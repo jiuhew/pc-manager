@@ -19,6 +19,7 @@ param(
     [string]$SkillPath,
     [switch]$Json,
     [switch]$KeepDuplicates,
+    [switch]$NoExif,
     [switch]$Force
 )
 
@@ -43,7 +44,7 @@ Usage:
   pc-manager report -ScanPath reports\scan-xxx.json [-Output report.md] [-Format md|html]
   pc-manager clean [-ScanPath scan.json] [-Category cache|system|installers|orphans|recycle] [-Execute] [-Admin]
   pc-manager organize -Source C:\Path -Destination D:\Path [-Execute]
-  pc-manager organize -Source E:\Photos [-Execute]          # photo year/month organizer
+  pc-manager organize -Source E:\Photos [-NoExif] [-Execute]  # photo year/month organizer
   pc-manager dedupe -Source D:\SomeFolder [-Execute] [-KeepDuplicates]
   pc-manager skills [-Install] [-SkillPath <dir>]
   pc-manager version
@@ -103,7 +104,7 @@ switch ($Command) {
         if ($Destination) {
             Invoke-Organize -Source $Source -Destination $Destination -Execute:$Execute -Force:$Force
         } else {
-            Invoke-OrganizePhotos -Source $Source -Execute:$Execute
+            Invoke-OrganizePhotos -Source $Source -Execute:$Execute -NoExif:$NoExif
         }
     }
 
