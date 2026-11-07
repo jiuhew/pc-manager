@@ -1,3 +1,9 @@
+<h1 align="center">pc-manager</h1>
+
+<p align="center">
+  快速分析 Windows 电脑的所有磁盘，生成结构化清单，并配套 <b>AI Skill 库</b> 做文件分类、清理、迁移和照片整理。
+</p>
+
 <p align="center">
   <a href="https://github.com/jiuhew/pc-manager/stargazers"><img src="https://img.shields.io/github/stars/jiuhew/pc-manager?logo=github&label=Stars" alt="GitHub stars"></a>
   <a href="https://github.com/jiuhew/pc-manager/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat" alt="MIT License"></a>
@@ -10,11 +16,21 @@
   <a href="https://github.com/jiuhew/pc-manager"><img src="https://img.shields.io/badge/scan-C%3A%20D%3A%20E-success" alt="Scan C D E"></a>
 </p>
 
-# pc-manager
-
-快速分析 Windows 电脑的所有磁盘，生成结构化清单，并配套 **AI Skill 库** 做文件分类、清理、迁移和照片整理。
-
 > 核心原则：**先只读分析，再让用户确认，最后才执行。** 默认 dry-run，只有 `-Execute` 才会真正删除或移动。
+
+## 目录
+
+- [已验证](#已验证)
+- [特性](#特性)
+- [快速开始](#快速开始)
+- [命令](#命令)
+- [AI Skill 库](#ai-skill-库)
+- [输出结构](#输出结构)
+- [架构](#架构)
+- [安全](#安全)
+- [实践迭代](#实践迭代)
+- [Roadmap](#roadmap)
+- [License](#license)
 
 ## 已验证
 
