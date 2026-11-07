@@ -1,0 +1,53 @@
+{
+  "Scan": "2026-11-07T19:04:27",
+  "Seconds": 134.2,
+  "Files": 726036,
+  "TotalGB": 952.19,
+  "UsedGB": 428.96,
+  "FreeGB": 523.24,
+  "Health": 85,
+  "Grade": "A",
+  "JunkCount": 12,
+  "JunkGB": 3.17,
+  "PhotoGB": 91.14,
+  "PhotoCount": 65952,
+  "VideoGB": 190.67,
+  "VideoCount": 1821,
+  "EmptyDirs": 74688,
+  "Reparse": 56,
+  "LargeFiles": 75,
+  "Migration": [
+    {
+      "Name": "wsl",
+      "SizeGB": 18.36,
+      "Target": ""
+    }
+  ],
+  "Findings": [
+    {
+      "Id": "cloud-C:\\Users\\wjh96\\OneDrive",
+      "Severity": "P2",
+      "Title": "Cloud placeholder folder has a large logical/local gap"
+    },
+    {
+      "Id": "workspace-scattered",
+      "Severity": "P2",
+      "Title": "Project workspaces are scattered"
+    },
+    {
+      "Id": "empty-dirs",
+      "Severity": "P2",
+      "Title": "Many empty directories"
+    },
+    {
+      "Id": "large-files",
+      "Severity": "P2",
+      "Title": "Large files deserve a periodic review"
+    },
+    {
+      "Id": "hiberfil-large",
+      "Severity": "P2",
+      "Title": "Hibernation file is large"
+    }
+  ]
+}
