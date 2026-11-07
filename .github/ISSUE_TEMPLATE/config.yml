@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/jiuhew/pc-manager/security/advisories/new
+    about: Please report security issues privately, not as a public issue.
+  - name: Documentation
+    url: https://github.com/jiuhew/pc-manager/tree/main/docs
+    about: Read the safety, schema, and naming guides first.

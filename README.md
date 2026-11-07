@@ -30,6 +30,9 @@
 - [安全](#安全)
 - [实践迭代](#实践迭代)
 - [Roadmap](#roadmap)
+- [贡献](#贡献)
+- [安全](#安全)
+- [更新日志](#更新日志)
 - [License](#license)
 
 ## 已验证
@@ -234,6 +237,18 @@ tests/validate.ps1       语法/结构校验
 - [ ] 多盘并行扫描
 - [ ] EXIF 读取（照片按拍摄时间归档）
 - [ ] Linux/macOS 支持
+
+## 贡献
+
+欢迎提交 Issue 和 PR。请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [docs/safety.md](docs/safety.md)。
+
+## 安全
+
+发现安全问题请使用 GitHub 私密安全公告，不要公开 Issue。详见 [SECURITY.md](SECURITY.md)。
+
+## 更新日志
+
+版本变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## License
 
