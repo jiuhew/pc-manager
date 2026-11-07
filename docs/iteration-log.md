@@ -56,6 +56,12 @@ Real-world lessons that shaped `pc-manager`.
 - Cache cleanup: 459 MB reclaimed; `WebCache` and Explorer thumbnail caches were skipped because `dllhost`/`explorer` held them open.
 - Version bumped to 0.2.0.
 
+## 2026-11-07 — v0.2.1
+
+- App insights `updatesMatched` now counts apps with an available update, aligning with the Apps page badges.
+- Documented the Apps overview cards, filters, icon-only uninstall, and `/api/apps/insights/:id`.
+- Version bumped to 0.2.1.
+
 ## Tool improvements
 
 - Added cloud placeholder handling (`0x400000`, `0x1000`, `0x100000`).

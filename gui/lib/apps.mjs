@@ -340,7 +340,7 @@ export async function getAppInsights(scan, options = {}) {
     totalApps: apps.length,
     lastUsedKnown,
     updatesAvailable: updates.length,
-    updatesMatched: updates.length - unmatchedUpdates.length,
+    updatesMatched: apps.filter((entry) => entry.update).length,
     suggestedUninstall,
     wingetError: winget.error || '',
     apps,

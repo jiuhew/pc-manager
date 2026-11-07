@@ -35,7 +35,7 @@ node gui/server.mjs --port 7800 --open
 | 概览 | 健康分、CPU/内存/显卡/主板/物理磁盘、存储分配、Top 占用和审计发现 |
 | 清理 | 垃圾候选列表，按安全等级/分类筛选，搜索，批量选择，预览后执行 |
 | 磁盘 | 每个磁盘的容量、Top 目录、文件类型、大文件、云占位、空目录/Junction 统计 |
-| 应用 | 已安装应用及估算大小，可搜索；单个应用可调用自带卸载程序 |
+| 应用 | 软件概况：可更新数量、建议卸载数量、使用记录；自动调用 winget 检查更新，按 Prefetch/UserAssist 估算上次使用时间；支持筛选和图标化卸载 |
 | AI 建议 | 根据扫描结果生成可编辑、可复制的任务指令；复制给 AI 助手执行 |
 
 > 迁移和诊断信息已合并到“概览”和“AI 建议”：迁移进入 AI 建议，孤立项/大文件/空目录进入概览的审计发现。
@@ -88,6 +88,7 @@ node gui/server.mjs --port 7800 --open
 | POST | `/api/scan` | 启动扫描任务（支持多盘） |
 | POST | `/api/clean/preview` | 重新测量所选项目（只读） |
 | POST | `/api/clean/execute` | 执行清理（必须确认） |
+| GET | `/api/apps/insights/:id` | winget 更新检查、上次使用时间估算、卸载建议 |
 | POST | `/api/apps/uninstall` | 调用应用卸载程序（必须确认） |
 | POST | `/api/ai/preview` | 运行 AI 计划预览（只读） |
 | POST | `/api/ai/execute` | 执行 AI 计划（必须确认） |

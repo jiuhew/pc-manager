@@ -5,6 +5,17 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-11-07
+
+### Fixed
+
+- App insights `updatesMatched` now counts apps with an available update, matching the Apps page badges instead of subtracting unmatched winget entries.
+
+### Changed
+
+- Documented the Apps overview cards, icon-only uninstall action, app filters, and the `/api/apps/insights/:id` endpoint.
+- Version bumped to 0.2.1.
+
 ## [0.2.0] - 2026-11-07
 
 ### Added
@@ -24,6 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New monitor + AI sparkle brand logo, favicon, and the "AI 系统清理" slogan.
 - AI suggestion cards can be ignored per scan (persisted in localStorage) and restored later.
 - The old "重新分析" action is now "复制分析提示词": it copies a complete agent prompt using the current scan and audit instead of re-running the local planner.
+- Apps page overview: installed/update/suggested-uninstall/usage-record cards, automatic `winget upgrade` checks, per-app update versions, and last-used estimates from Prefetch/UserAssist.
+- Icon-only uninstall action and app filters for all / update available / suggested uninstall.
+- Removed the meaningless AI prompt "reset" button; edits can still be changed directly in the textarea.
 - Clickable permission chip next to the sidebar title with an admin/standard mode menu and an `/api/relaunch` action for requesting elevation.
 - `Invoke-OrganizeMedia`: archive photos/videos by `YYYY\YYYY-MM` with collision handling and CSV manifest.
 - `Invoke-OrganizeMedia` accepts an optional `-DateResolver` scriptblock so callers can override the archive date per file, for example to use an event folder date when EXIF is known to be wrong.
@@ -101,7 +115,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Duplicate `%TEMP%` and `%LOCALAPPDATA%\Temp` entries are deduplicated.
 - Photo organizer skips already-organized `YYYY` and `YYYY-MM_*` directories.
 
-[Unreleased]: https://github.com/jiuhew/pc-manager/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/jiuhew/pc-manager/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/jiuhew/pc-manager/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/jiuhew/pc-manager/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/jiuhew/pc-manager/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/jiuhew/pc-manager/compare/v0.1.0...v0.1.1

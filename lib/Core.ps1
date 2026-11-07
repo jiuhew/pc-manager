@@ -1,4 +1,4 @@
-$script:PcManagerVersion = '0.2.0'
+$script:PcManagerVersion = '0.2.1'
 
 # Junk candidates catalog (path -> category). Used by classify and clean.
 $script:JunkCandidates = @(
