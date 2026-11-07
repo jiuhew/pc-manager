@@ -1,3 +1,15 @@
+<p align="center">
+  <a href="https://github.com/jiuhew/pc-manager/stargazers"><img src="https://img.shields.io/github/stars/jiuhew/pc-manager?logo=github&label=Stars" alt="GitHub stars"></a>
+  <a href="https://github.com/jiuhew/pc-manager/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat" alt="MIT License"></a>
+  <a href="https://github.com/jiuhew/pc-manager/tags"><img src="https://img.shields.io/github/v/tag/jiuhew/pc-manager?label=tag&color=1a73e8" alt="Latest tag"></a>
+  <a href="https://github.com/jiuhew/pc-manager/actions/workflows/validate.yml"><img src="https://img.shields.io/github/actions/workflow/status/jiuhew/pc-manager/validate.yml?label=validate" alt="Validate"></a>
+  <br>
+  <a href="https://github.com/jiuhew/pc-manager"><img src="https://img.shields.io/badge/PowerShell-%3E%3D7-5391FE?logo=powershell&logoColor=fff" alt="PowerShell 7+"></a>
+  <a href="https://github.com/jiuhew/pc-manager"><img src="https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows&logoColor=fff" alt="Windows"></a>
+  <a href="https://github.com/jiuhew/pc-manager/tree/main/skills"><img src="https://img.shields.io/badge/AI%20Skills-6-8B5CF6" alt="AI Skills"></a>
+  <a href="https://github.com/jiuhew/pc-manager"><img src="https://img.shields.io/badge/scan-C%3A%20D%3A%20E-success" alt="Scan C D E"></a>
+</p>
+
 # pc-manager
 
 快速分析 Windows 电脑的所有磁盘，生成结构化清单，并配套 **AI Skill 库** 做文件分类、清理、迁移和照片整理。
