@@ -1,0 +1,85 @@
+{
+  "SchemaVersion": 1,
+  "GeneratedAt": "2026-11-07T12:00:00",
+  "Computer": "TEST-PC",
+  "User": "tester",
+  "OS": "Microsoft Windows NT 10.0",
+  "FastMode": true,
+  "ParallelMode": false,
+  "ExcludeDirs": [],
+  "ScanSeconds": 12.3,
+  "Drives": [
+    {
+      "Id": "C:",
+      "Root": "C:\\",
+      "TotalGB": 100,
+      "FreeGB": 60,
+      "UsedGB": 40,
+      "TotalFiles": 1000,
+      "TotalSizeGB": 50,
+      "DirCount": 100,
+      "TopFolders": [
+        { "Name": "Windows", "SizeGB": 20, "Files": 500 }
+      ],
+      "Extensions": [
+        { "Ext": ".jpg", "Count": 10, "SizeGB": 1, "Kind": "photo" }
+      ],
+      "LargeFiles": [
+        { "Path": "C:\\big.bin", "SizeMB": 800, "Modified": "2026-11-01T00:00:00" }
+      ],
+      "EmptyDirs": ["C:\\empty-a", "C:\\empty-b"],
+      "ReparsePoints": ["C:\\link"],
+      "ExcludedDirs": [],
+      "Cloud": [],
+      "ScanSeconds": 5
+    }
+  ],
+  "InstalledApps": [
+    {
+      "DisplayName": "Example App",
+      "DisplayVersion": "1.0",
+      "Publisher": "Example",
+      "InstallLocation": "C:\\Program Files\\Example",
+      "UninstallString": "uninstall.exe",
+      "EstimatedMB": 10
+    }
+  ],
+  "Orphans": {
+    "UninstallEntries": [],
+    "RunKeys": [],
+    "AppxData": []
+  },
+  "Junk": [
+    {
+      "Name": "User TEMP",
+      "Path": "C:\\Users\\tester\\AppData\\Local\\Temp",
+      "SizeMB": 100,
+      "SizeGB": 0.1,
+      "Category": "cache",
+      "Safety": "safe",
+      "Mode": "contents",
+      "Reason": "Temporary files"
+    },
+    {
+      "Name": "old.exe",
+      "Path": "C:\\Users\\tester\\Downloads\\old.exe",
+      "SizeMB": 200,
+      "SizeGB": 0.2,
+      "Category": "installer",
+      "Safety": "confirm",
+      "Mode": "path",
+      "Reason": "Old installer"
+    }
+  ],
+  "Migration": [],
+  "Media": {
+    "PhotoGB": 0,
+    "PhotoCount": 0,
+    "VideoGB": 0,
+    "VideoCount": 0,
+    "AudioGB": 0,
+    "AudioCount": 0,
+    "MediaFolders": []
+  },
+  "Recommendations": ["Test recommendation"]
+}

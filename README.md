@@ -12,7 +12,7 @@
   <br>
   <a href="https://github.com/jiuhew/pc-manager"><img src="https://img.shields.io/badge/PowerShell-%3E%3D7-5391FE?logo=powershell&logoColor=fff" alt="PowerShell 7+"></a>
   <a href="https://github.com/jiuhew/pc-manager"><img src="https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows&logoColor=fff" alt="Windows"></a>
-  <a href="https://github.com/jiuhew/pc-manager/tree/main/skills"><img src="https://img.shields.io/badge/AI%20Skills-6-8B5CF6" alt="AI Skills"></a>
+  <a href="https://github.com/jiuhew/pc-manager/tree/main/skills"><img src="https://img.shields.io/badge/AI%20Skills-7-8B5CF6" alt="AI Skills"></a>
   <a href="https://github.com/jiuhew/pc-manager"><img src="https://img.shields.io/badge/scan-C%3A%20D%3A%20E-success" alt="Scan C D E"></a>
 </p>
 
@@ -23,6 +23,8 @@
 - [已验证](#已验证)
 - [特性](#特性)
 - [快速开始](#快速开始)
+- [GUI 控制台](#gui-控制台)
+- [存储策略与审计](#存储策略与审计)
 - [命令](#命令)
 - [AI Skill 库](#ai-skill-库)
 - [输出结构](#输出结构)
@@ -52,8 +54,10 @@
 - **自定义排除**：`-Exclude` 指定不扫描的目录，适合大型游戏/备份目录。
 - **可选并行**：`-Parallel` 多盘并行；不同物理磁盘时更快，同一物理磁盘会抢 I/O，收益有限甚至更慢，所以默认关闭。
 - **照片整理**：优先读取 EXIF 拍摄时间，按 `YYYY\YYYY-MM_事件` 归类，保留原始文件名，生成 manifest。JPEG/TIFF 直接读取；HEIC/CR3/RAW 安装 ExifTool 后支持。
-- **AI Skill 库**：扫描、清理、照片、文档、去重、迁移 6 个 skill，可直接安装到 OpenCode。
-- **纯 PowerShell**：Windows 原生，无需 Python/Node 运行时。
+- **AI Skill 库**：扫描、清理、照片、文档、去重、迁移、存储策略 7 个 skill，可直接安装到 OpenCode。
+- **存储策略审计**：内置通用容量预算、目录规范、仓库空间策略和 P0/P1/P2 健康评分；`audit` 输出机器级问题清单，GUI/AI 建议会读取审计结果。
+- **本地 Web GUI**：Node.js 内置模块搭建，零 npm 依赖；支持多盘扫描、按项清理、应用卸载、AI 建议计划，先预览再确认执行，并生成 manifest。
+- **核心纯 PowerShell**：扫描、分类、清理、迁移逻辑不需要额外运行时；GUI 是可选层（Node.js 22+，推荐 26）。
 
 ## 快速开始
 
@@ -81,12 +85,65 @@ reports/scan-20261107-130000.json   # 完整结构化数据
 reports/scan-20261107-130000.md     # 人类可读报告
 ```
 
+## GUI 控制台
+
+不喜欢命令行表格的话，可以直接启动本地 Web 控制台：
+
+```powershell
+# 默认 http://127.0.0.1:7788/
+node gui/server.mjs --open
+
+# 或使用 PowerShell 启动器
+pwsh -File scripts\start-gui.ps1
+
+# 清理系统缓存需要管理员权限
+pwsh -File scripts\start-gui.ps1 -Admin
+```
+
+GUI 读取 `reports/scan-*.json`，采用**左侧功能侧栏 + 右侧内容**的单页布局，为后续系统分析等功能预留入口。
+
+- **多盘扫描**：新建扫描时列出本机所有固定磁盘（C/D/E…），默认全选，可单独取消；显示每个盘的空闲容量。
+- **任务进度条**：扫描/预览/清理/归档/卸载开始后，顶部显示进度条；点击进度条打开详情（日志、逐项进度、取消任务），不再使用侧栏抽屉。
+- **清理**：勾选项目（`review` 项不可选）→ **预览**（重新测量）→ **确认**（勾选确认框）→ 执行 → `reports/clean/<timestamp>/manifest.csv`。
+- **应用卸载**：在“应用”页对单个应用点击卸载；服务端会重新读取注册表匹配卸载命令，调用应用自带卸载程序，不直接删除安装目录。
+- **权限切换**：侧栏标题旁的权限徽标可点击，查看当前模式并请求以管理员身份重启。
+- **AI 建议**：根据扫描结果生成可编辑、可复制的指令，例如“视频按年月归档到 E:\Media\Videos”“清理安全缓存”“迁移 CUDA”。每条建议都是一段 Markdown 指令，可以修改路径/规则后复制给 AI 助手执行；GUI 本身不会在 AI 页直接执行操作。
+
+服务默认只绑定 `127.0.0.1`，只接受当前 scan 中存在的清理路径，并拒绝 `WinSxS`、`Windows\Installer`、`Package Cache`、pagefile 等受保护路径；AI 计划的源路径也必须属于当前扫描识别出的媒体目录或迁移候选。详细说明见 [gui/README.md](gui/README.md)。
+
+## 存储策略与审计
+
+通用存储策略见 **[docs/storage-strategy.md](docs/storage-strategy.md)**：
+
+- 容量预算（系统盘 ≥15%/50GB，数据盘 ≥10%/20GB）
+- Tier 0–3 分层（系统/活跃项目/媒体/归档）
+- 单一 Work/Media/Archive/Download 根目录规范
+- 代码仓库空间策略（数据集/构建产物/Git LFS/工作区合并）
+- 文件生命周期（下载 7/30 天、安装包 30 天、归档 1 年）
+- 路径卫生、云占位、junction、空目录、大文件、应用卸载
+- P0/P1/P2 分级和健康评分
+
+审计命令：
+
+```powershell
+# 人类可读报告（写到 reports/audit-<timestamp>.md）
+pwsh -File pc-manager.ps1 audit -ScanPath reports\scan-<timestamp>.json [-Output docs\analysis\audit.md]
+
+# 输出 JSON 给 agent
+pwsh -File pc-manager.ps1 audit -ScanPath reports\scan-<timestamp>.json -Json
+```
+
+`scan` 会自动把 `Audit` 写入 JSON。GUI 的 AI 建议会读取 `Audit.Findings`，生成“空间策略”类可复制建议。
+
+本机分析示例：[docs/analysis/storage-analysis-2026-11-07.md](docs/analysis/storage-analysis-2026-11-07.md)。
+
 ## 命令
 
 | 命令 | 作用 | 是否写盘 |
 |---|---|---|
 | `scan` | 扫描磁盘并生成 JSON/Markdown 报告 | 只写 reports/ |
 | `report` | 从已有 JSON 重新生成报告 | 只写报告 |
+| `audit` | 按通用存储策略生成健康分、容量预算和路径问题 | 只写报告 |
 | `clean` | 清理缓存/回收站/旧安装包 | 仅 `-Execute` |
 | `organize` | 目录迁移 + junction，或照片年月整理 | 仅 `-Execute` |
 | `dedupe` | 查找重复文件并移动到隔离区 | 仅 `-Execute` |
@@ -104,6 +161,16 @@ pwsh -File pc-manager.ps1 scan [-Drives C,D,E] [-Fast] [-Exclude <dir1,dir2>] [-
 - `-Exclude`：额外排除目录，逗号分隔。
 - `-Parallel`：多盘并行；同一物理磁盘上可能更慢，默认顺序。
 - `-Json`：同时把 JSON 输出到控制台。
+
+### audit
+
+```powershell
+pwsh -File pc-manager.ps1 audit -ScanPath reports\scan-<timestamp>.json [-Output audit.md] [-Json]
+```
+
+- 读取扫描 JSON，不重新扫描、不修改文件。
+- 输出健康分（0–100）、容量预算、Tier 角色、P0/P1/P2 问题、Top 目录和 7/30/90 天建议。
+- `-Json` 适合 agent/GUI 读取；不带 `-Json` 时写 Markdown 报告。
 
 ### clean
 
@@ -151,6 +218,7 @@ D:\Backup\duplicates\<timestamp>\
 | `document-organizer` | PDF/PPT/课程资料/电子书整理 |
 | `duplicate-finder` | 重复文件检测与隔离 |
 | `app-migration` | Anaconda/WSL/Docker/游戏迁移 |
+| `storage-strategy` | 容量预算、目录规范、仓库空间策略、路径卫生与审计 |
 
 安装到 OpenCode 全局 skill 目录：
 
@@ -205,6 +273,7 @@ pc-manager.ps1           CLI 入口
 lib/
   Core.ps1               通用工具、云占位、安装应用、孤立项
   Inventory.ps1          磁盘扫描器
+  Strategy.ps1           存储策略审计、健康分、P0/P1/P2 问题
   Classify.ps1           垃圾/迁移/媒体分类与建议
   Report.ps1             Markdown/HTML 报告
   Clean.ps1              清理与去重
@@ -212,8 +281,16 @@ lib/
   Skills.ps1             skill 安装
 skills/                  AI Skill 库
 config/default.json      阈值配置
+gui/                     可选本地 Web GUI（Node.js 内置模块，零依赖）
+  server.mjs             HTTP API、任务、SSE
+  bridge.ps1             调用 PowerShell 清理函数
+  public/                无框架前端
 docs/                    规范、schema、安全、迭代日志
+  storage-strategy.md    通用存储策略
+  analysis/              本机存储分析报告（含日期）
 scripts/install-skills.ps1
+scripts/start-gui.ps1    启动 GUI（可选 -Admin）
+scripts/consolidate-downloads.ps1  合并下载根（默认 dry-run，-Execute 写 manifest）
 tests/validate.ps1       语法/结构校验
 ```
 

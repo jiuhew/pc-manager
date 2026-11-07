@@ -268,5 +268,14 @@ function Add-PcAnalysis {
     $Scan | Add-Member -NotePropertyName Migration -NotePropertyValue @($migration) -Force
     $Scan | Add-Member -NotePropertyName Media -NotePropertyValue $media -Force
     $Scan | Add-Member -NotePropertyName Recommendations -NotePropertyValue @($recs) -Force
+
+    if (Get-Command Invoke-StorageAudit -ErrorAction SilentlyContinue) {
+        try {
+            $audit = Invoke-StorageAudit -Scan $Scan -Junk $junk -Migration $migration -Media $media -Config $config
+            $Scan | Add-Member -NotePropertyName Audit -NotePropertyValue $audit -Force
+        } catch {
+            $Scan | Add-Member -NotePropertyName Audit -NotePropertyValue $null -Force
+        }
+    }
     return $Scan
 }

@@ -4,7 +4,8 @@ function Invoke-Organize {
         [Parameter(Mandatory)][string]$Source,
         [Parameter(Mandatory)][string]$Destination,
         [switch]$Execute,
-        [switch]$Force
+        [switch]$Force,
+        [string]$ManifestRoot
     )
 
     $item = Get-Item -LiteralPath $Source -Force -ErrorAction Stop
@@ -13,6 +14,10 @@ function Invoke-Organize {
     if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
         throw 'Source is already a junction/reparse point.'
     }
+    if (Get-Command Test-PcProtectedPath -ErrorAction SilentlyContinue) {
+        if (Test-PcProtectedPath -Path $src) { throw "Refusing to move a protected path: $src" }
+        if (Test-PcProtectedPath -Path $Destination) { throw "Refusing to move to a protected path: $Destination" }
+    }
     if (Test-Path -LiteralPath $Destination) { throw "Destination already exists: $Destination" }
 
     $sizeMB = Get-DirSizeMB -Path $src
@@ -20,7 +25,14 @@ function Invoke-Organize {
         Write-Host "[DRY-RUN] Move: $src"
         Write-Host "[DRY-RUN]   ->  $Destination ($sizeMB MB)"
         Write-Host "[DRY-RUN] Then create junction: $src -> $Destination"
-        return
+        return [pscustomobject]@{
+            Execute    = $false
+            Status     = 'would-move'
+            Source     = $src
+            Destination = $Destination
+            SizeMB     = $sizeMB
+            ManifestPath = $null
+        }
     }
 
     $parent = Split-Path $Destination -Parent
@@ -35,7 +47,225 @@ function Invoke-Organize {
         Remove-Item -LiteralPath $src -Recurse -Force -Confirm:$false -ErrorAction SilentlyContinue
     }
     New-Item -ItemType Junction -Path $src -Target $Destination | Out-Null
+
+    $root = if ($ManifestRoot) {
+        $ManifestRoot
+    } else {
+        $pcRoot = if ($script:PcRoot) { $script:PcRoot } else { (Get-Location).Path }
+        Join-Path $pcRoot (Join-Path 'reports\organize' (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    }
+    New-Item -ItemType Directory -Path $root -Force | Out-Null
+    $manifestPath = Join-Path $root 'manifest.csv'
+    [pscustomobject]@{
+        Source      = $src
+        Destination = $Destination
+        SizeMB      = $sizeMB
+        Junction    = $true
+        Time        = (Get-Date).ToString('s')
+    } | Export-Csv -LiteralPath $manifestPath -NoTypeInformation -Encoding utf8BOM
+
     Write-Host "OK: moved and linked. $src -> $Destination"
+    Write-Host "Manifest: $manifestPath"
+
+    return [pscustomobject]@{
+        Execute      = $true
+        Status       = 'completed'
+        Source       = $src
+        Destination  = $Destination
+        SizeMB       = $sizeMB
+        ManifestPath = $manifestPath
+    }
+}
+
+function Invoke-OrganizeMedia {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Source,
+        [Parameter(Mandatory)][string]$Destination,
+        [ValidateSet('video', 'photo', 'all')][string]$Kind = 'video',
+        [switch]$Execute,
+        [switch]$NoExif,
+        [string]$ManifestRoot,
+        [scriptblock]$DateResolver,
+        [scriptblock]$OnItem,
+        [scriptblock]$OnProgress
+    )
+
+    $rootItem = Get-Item -LiteralPath $Source -Force -ErrorAction Stop
+    if (-not $rootItem.PSIsContainer) { throw "Not a folder: $Source" }
+    $src = $rootItem.FullName.TrimEnd('\')
+    if ($src -match '^[A-Za-z]:\\?$') { throw 'Refusing to organize a drive root.' }
+    if (($rootItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw 'Source is already a junction/reparse point.'
+    }
+    if (Get-Command Test-PcProtectedPath -ErrorAction SilentlyContinue) {
+        if (Test-PcProtectedPath -Path $src) { throw "Refusing to organize a protected path: $src" }
+        if (Test-PcProtectedPath -Path $Destination) { throw "Refusing to write to a protected path: $Destination" }
+    }
+
+    $dstRoot = [System.IO.Path]::GetFullPath($Destination).TrimEnd('\')
+    if ($dstRoot -match '^[A-Za-z]:\\?$') { throw 'Refusing to write directly to a drive root.' }
+    if ($dstRoot.Equals($src, [System.StringComparison]::OrdinalIgnoreCase) -or
+        $dstRoot.StartsWith($src + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Destination cannot be the source itself or inside the source.'
+    }
+
+    $dateFromName = {
+        param([string]$Name)
+        if ($Name -match '(20\d{2})[-_]?([01]\d)[-_]?([0-3]\d)') {
+            try {
+                $dt = [datetime]::new([int]$Matches[1], [int]$Matches[2], [int]$Matches[3])
+                return $dt
+            } catch { }
+        }
+        return $null
+    }
+
+    $files = [System.Collections.Generic.List[object]]::new()
+    $stack = [System.Collections.Generic.Stack[string]]::new()
+    $stack.Push($src)
+    if ($OnProgress) {
+        & $OnProgress @{ Phase = 'scan'; Current = 0; Total = 0; Label = '扫描媒体文件'; Indeterminate = $true }
+    }
+    while ($stack.Count -gt 0) {
+        $dir = $stack.Pop()
+        try { $entries = [System.IO.Directory]::EnumerateFileSystemEntries($dir) } catch { continue }
+        foreach ($entry in $entries) {
+            try {
+                $attr = [int][System.IO.File]::GetAttributes($entry)
+                if (($attr -band 0x10) -ne 0) {
+                    if (($attr -band 0x400) -ne 0 -and (($attr -band $script:CloudFlags) -eq 0)) { continue }
+                    $stack.Push($entry)
+                    continue
+                }
+                if (($attr -band $script:CloudFlags) -ne 0) { continue }
+                $fi = [System.IO.FileInfo]$entry
+                if ($fi.Length -le 0) { continue }
+                $category = Get-ExtCategory $fi.Extension
+                if ($Kind -eq 'all') {
+                    if ($category -notin @('photo', 'video')) { continue }
+                } elseif ($category -ne $Kind) {
+                    continue
+                }
+                $files.Add([pscustomobject]@{ File = $fi; Category = $category })
+                if ($OnProgress -and ($files.Count % 200 -eq 0)) {
+                    & $OnProgress @{ Phase = 'scan'; Current = $files.Count; Total = 0; Label = '扫描媒体文件'; Indeterminate = $true }
+                }
+            } catch { }
+        }
+    }
+
+    if ($OnProgress) {
+        & $OnProgress @{ Phase = 'move'; Current = 0; Total = $files.Count; Label = $(if ($Execute) { '准备移动' } else { '准备预览' }); Indeterminate = $false }
+    }
+
+    $results = [System.Collections.Generic.List[object]]::new()
+    $moved = 0
+    $planned = 0
+    $failed = 0
+    $totalMB = 0.0
+    $emitted = 0
+    $processed = 0
+
+    foreach ($entry in $files) {
+        $processed++
+        if ($OnProgress) {
+            & $OnProgress @{
+                Phase = 'move'
+                Current = $processed
+                Total = $files.Count
+                Label = $(if ($Execute) { '移动文件' } else { '预览文件' })
+                Indeterminate = $false
+            }
+        }
+        $fi = $entry.File
+        $totalMB += $fi.Length / 1MB
+        $date = $null
+        if ($DateResolver) {
+            try { $date = & $DateResolver $fi } catch { $date = $null }
+            if ($date -isnot [datetime]) { $date = $null }
+        }
+        if (-not $date -and ($entry.Category -eq 'video' -or $Kind -eq 'video')) {
+            $date = & $dateFromName $fi.Name
+        }
+        if (-not $date) {
+            $date = Get-MediaDate -File $fi -NoExif:$NoExif
+        }
+        $month = $date.ToString('yyyy-MM')
+        $year = $date.ToString('yyyy')
+        $targetDir = Join-Path (Join-Path $dstRoot $year) $month
+        $target = Join-Path $targetDir $fi.Name
+        if (Test-Path -LiteralPath $target) {
+            $base = [System.IO.Path]::GetFileNameWithoutExtension($fi.Name)
+            $ext = $fi.Extension
+            $counter = 1
+            do {
+                $target = Join-Path $targetDir ('{0}_{1}{2}' -f $base, $counter, $ext)
+                $counter++
+            } while (Test-Path -LiteralPath $target)
+        }
+
+        $status = 'would-move'
+        $errorText = ''
+        if ($Execute) {
+            try {
+                New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+                Move-Item -LiteralPath $fi.FullName -Destination $target -ErrorAction Stop
+                $status = 'moved'
+                $moved++
+            } catch {
+                $status = 'failed'
+                $errorText = $_.Exception.Message
+                $failed++
+            }
+        } else {
+            $planned++
+        }
+
+        $row = [pscustomobject]@{
+            Name        = $fi.Name
+            Source      = $fi.FullName
+            Destination = $target
+            Category    = $entry.Category
+            SizeMB      = [math]::Round($fi.Length / 1MB, 2)
+            Month       = $month
+            Status      = $status
+            Error       = $errorText
+        }
+        $results.Add($row)
+        if ($OnItem -and $emitted -lt 5000) {
+            try { & $OnItem $row } catch { }
+            $emitted++
+        }
+    }
+
+    $manifestPath = $null
+    if ($Execute) {
+        $root = if ($ManifestRoot) {
+            $ManifestRoot
+        } else {
+            $pcRoot = if ($script:PcRoot) { $script:PcRoot } else { (Get-Location).Path }
+            Join-Path $pcRoot (Join-Path 'reports\organize' (Get-Date -Format 'yyyyMMdd-HHmmss'))
+        }
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $manifestPath = Join-Path $root 'manifest.csv'
+        $results | Select-Object Name, Source, Destination, Category, SizeMB, Month, Status, Error |
+            Export-Csv -LiteralPath $manifestPath -NoTypeInformation -Encoding utf8BOM
+    }
+
+    return [pscustomobject]@{
+        Execute      = [bool]$Execute
+        Kind         = $Kind
+        Source       = $src
+        Destination  = $dstRoot
+        TotalFiles   = $files.Count
+        Planned      = $planned
+        Moved        = $moved
+        Failed       = $failed
+        TotalMB      = [math]::Round($totalMB, 1)
+        ManifestPath = $manifestPath
+        Items        = @($results | Select-Object -First 200)
+    }
 }
 
 function Invoke-OrganizePhotos {

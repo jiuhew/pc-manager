@@ -46,6 +46,16 @@ Real-world lessons that shaped `pc-manager`.
 - HTML report gained bar charts for top folders and file types.
 - Version bumped to 0.1.1.
 
+## 2026-11-07 — v0.2.0
+
+- Local GUI: zero-dependency Node.js 22+ server, local-only binding, preview -> confirm -> execute, live job logs, cancel, and admin relaunch.
+- Storage strategy + audit: health score, capacity budget, tier plan, P0/P1/P2 findings, and path/media/download/workspace checks.
+- Safe cleanup: per-item selection, protected-path checks, recycle-bin handling, per-item manifests; locked files are skipped instead of forced.
+- Media: 5,117 photos / 67.18 GB and 306 videos / 57.65 GB archived with zero failures; `-DateResolver` supports per-file date overrides.
+- Download triage: 14.84 GB reduced to 0.08 MB; 3.34 GB archived, 3.26 GB Thunder cache deleted, 8.24 GB HLS moved; zero failures.
+- Cache cleanup: 459 MB reclaimed; `WebCache` and Explorer thumbnail caches were skipped because `dllhost`/`explorer` held them open.
+- Version bumped to 0.2.0.
+
 ## Tool improvements
 
 - Added cloud placeholder handling (`0x400000`, `0x1000`, `0x100000`).

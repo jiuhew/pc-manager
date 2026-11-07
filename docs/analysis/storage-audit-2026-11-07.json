@@ -1,0 +1,249 @@
+{
+  "SchemaVersion": 1,
+  "GeneratedAt": "2026-11-07T18:10:55",
+  "Computer": "SISYPHUS",
+  "HealthScore": 88,
+  "Grade": "A",
+  "Capacity": {
+    "TotalGB": 1906.61,
+    "UsedGB": 771.46,
+    "FreeGB": 1135.15,
+    "UsedPct": 40.5,
+    "Drives": [
+      {
+        "Id": "C:",
+        "Role": "OS + applications + caches",
+        "TotalGB": 506.61,
+        "UsedGB": 235.31,
+        "FreeGB": 271.3,
+        "FreePct": 53.6,
+        "TargetPct": 15,
+        "Status": "ok",
+        "Files": 935408
+      },
+      {
+        "Id": "E:",
+        "Role": "Media + archive",
+        "TotalGB": 700.0,
+        "UsedGB": 248.59,
+        "FreeGB": 451.41,
+        "FreePct": 64.5,
+        "TargetPct": 10,
+        "Status": "ok",
+        "Files": 20639
+      },
+      {
+        "Id": "D:",
+        "Role": "Active work + games + projects",
+        "TotalGB": 700.0,
+        "UsedGB": 287.56,
+        "FreeGB": 412.44,
+        "FreePct": 58.9,
+        "TargetPct": 10,
+        "Status": "ok",
+        "Files": 618940
+      }
+    ]
+  },
+  "Workload": {
+    "JunkGB": 0.67,
+    "SafeGB": 0.65,
+    "ConfirmGB": 0.0,
+    "ElevatedGB": 0.02,
+    "InstallerGB": 0.0,
+    "MediaGB": 399.2,
+    "PhotoGB": 168.6,
+    "VideoGB": 230.6,
+    "AppsGB": 44.4,
+    "DownloadGB": 0.86,
+    "CloudLogicalGB": 269.94,
+    "CloudLocalGB": 10.96
+  },
+  "TierPlan": [
+    {
+      "Drive": "C:",
+      "Role": "OS + applications + caches",
+      "Budget": "OS/apps <= 35%; user data <= 25%; free >= 15%"
+    },
+    {
+      "Drive": "E:",
+      "Role": "Media + archive",
+      "Budget": "archive/media <= 70%; backups <= 20%; free >= 10%"
+    },
+    {
+      "Drive": "D:",
+      "Role": "Active work + games + projects",
+      "Budget": "active projects <= 25%; media <= 45%; free >= 10%"
+    }
+  ],
+  "Findings": [
+    {
+      "Id": "cloud-C:\\Users\\Jiuhe\\OneDrive",
+      "Severity": "P2",
+      "Category": "cloud",
+      "Title": "Cloud placeholder folder has a large logical/local gap",
+      "Detail": "C:\\Users\\Jiuhe\\OneDrive: logical 269.9 GB, local 11.0 GB. Do not move placeholders as normal files.",
+      "Evidence": "80736 logical files, 19904 local files",
+      "Action": "Keep placeholders in place; use the cloud client to manage offline availability.",
+      "Safety": "read"
+    },
+    {
+      "Id": "empty-dirs",
+      "Severity": "P2",
+      "Category": "path",
+      "Title": "Many empty directories",
+      "Detail": "78451 empty directories were found. They are low-risk but make navigation and counts noisy.",
+      "Evidence": "78451 empty directories",
+      "Action": "Review empty directories before removing; keep ones required by tools.",
+      "Safety": "read"
+    },
+    {
+      "Id": "large-files",
+      "Severity": "P2",
+      "Category": "review",
+      "Title": "Large files deserve a periodic review",
+      "Detail": "98 files >= 500 MB total 312.0 GB. Some may be stale disk images, videos, or installers.",
+      "Evidence": "98 large files totaling 312.0 GB",
+      "Action": "Review the largest files; archive to cold storage or delete only after confirming ownership.",
+      "Safety": "read"
+    },
+    {
+      "Id": "hiberfil-large",
+      "Severity": "P2",
+      "Category": "system",
+      "Title": "Hibernation file is large",
+      "Detail": "hiberfil.sys uses 12.7 GB. If hibernation/fast startup is not needed, disable it through Windows settings instead of deleting the file.",
+      "Evidence": "hiberfil.sys = 12.7 GB",
+      "Action": "If hibernation is unused, run powercfg /h off as administrator; otherwise keep it.",
+      "Safety": "read"
+    }
+  ],
+  "Recommendations": [
+    "Keep placeholders in place; use the cloud client to manage offline availability.",
+    "Review empty directories before removing; keep ones required by tools.",
+    "Review the largest files; archive to cold storage or delete only after confirming ownership.",
+    "If hibernation is unused, run powercfg /h off as administrator; otherwise keep it."
+  ],
+  "TopConsumers": [
+    {
+      "Drive": "C:",
+      "Path": "C:\\Users",
+      "SizeGB": 320.67,
+      "Files": 491428
+    },
+    {
+      "Drive": "E:",
+      "Path": "E:\\Media",
+      "SizeGB": 223.57,
+      "Files": 16433
+    },
+    {
+      "Drive": "D:",
+      "Path": "D:\\Program Files (x86)",
+      "SizeGB": 217.69,
+      "Files": 53869
+    },
+    {
+      "Drive": "C:",
+      "Path": "C:\\Windows",
+      "SizeGB": 58.18,
+      "Files": 261059
+    },
+    {
+      "Drive": "C:",
+      "Path": "C:\\Program Files",
+      "SizeGB": 43.15,
+      "Files": 102404
+    },
+    {
+      "Drive": "D:",
+      "Path": "D:\\anaconda3",
+      "SizeGB": 22.11,
+      "Files": 531076
+    },
+    {
+      "Drive": "C:",
+      "Path": "C:\\Program Files (x86)",
+      "SizeGB": 20.83,
+      "Files": 60282
+    },
+    {
+      "Drive": "E:",
+      "Path": "E:\\Personal",
+      "SizeGB": 16.96,
+      "Files": 780
+    },
+    {
+      "Drive": "D:",
+      "Path": "D:\\Docker",
+      "SizeGB": 16.86,
+      "Files": 2
+    },
+    {
+      "Drive": "C:",
+      "Path": "C:\\hiberfil.sys",
+      "SizeGB": 12.74,
+      "Files": 1
+    },
+    {
+      "Drive": "D:",
+      "Path": "D:\\wsl",
+      "SizeGB": 10.7,
+      "Files": 1
+    },
+    {
+      "Drive": "C:",
+      "Path": "C:\\pagefile.sys",
+      "SizeGB": 10.5,
+      "Files": 1
+    },
+    {
+      "Drive": "C:",
+      "Path": "C:\\ProgramData",
+      "SizeGB": 8.59,
+      "Files": 19960
+    },
+    {
+      "Drive": "E:",
+      "Path": "E:\\Box",
+      "SizeGB": 6.59,
+      "Files": 3072
+    },
+    {
+      "Drive": "D:",
+      "Path": "D:\\AppData",
+      "SizeGB": 6.53,
+      "Files": 32618
+    },
+    {
+      "Drive": "D:",
+      "Path": "D:\\Archive",
+      "SizeGB": 3.34,
+      "Files": 144
+    },
+    {
+      "Drive": "D:",
+      "Path": "D:\\迅雷下载",
+      "SizeGB": 0.86,
+      "Files": 42
+    },
+    {
+      "Drive": "E:",
+      "Path": "E:\\Projects",
+      "SizeGB": 0.76,
+      "Files": 249
+    },
+    {
+      "Drive": "D:",
+      "Path": "D:\\Program Files",
+      "SizeGB": 0.74,
+      "Files": 1128
+    },
+    {
+      "Drive": "E:",
+      "Path": "E:\\Photos",
+      "SizeGB": 0.37,
+      "Files": 7
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "name": "pc-manager-gui",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Local web GUI for pc-manager scan review and cleanup",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "open": "node server.mjs --open",
+    "test": "node --test \"test/*.test.mjs\""
+  }
+}

@@ -22,6 +22,8 @@ Instructions for AI agents working in this repository.
    - Keep scripts ASCII where possible.
 9. **OneDrive/cloud placeholders.** Do not treat logical size as local usage. Do not move placeholders.
 10. **WinSxS hardlinks.** Do not compute size naively or delete directly.
+11. **GUI boundary.** The optional `gui/` layer must keep scan and preview read-only. Execute requires explicit confirmation, must resolve client paths against the selected scan's `Junk` list, and must write a manifest. AI plans must be validated against scan allowlists (media folders, migration candidates) before execution. App uninstall must re-read the registry entry instead of trusting a command from the scan JSON.
+12. **Storage strategy.** `docs/storage-strategy.md` is the source of truth for capacity budgets, directory conventions, repo space rules, and P0/P1/P2 thresholds. Use `pc-manager audit` / `Invoke-StorageAudit`; never turn a finding into a destructive action without preview and user confirmation.
 
 ## Validation
 

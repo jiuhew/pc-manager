@@ -48,3 +48,17 @@ If not elevated, skip `elevated` items with a clear message.
 - Same name is not proof of duplication (camera filenames wrap).
 - RAW/JPG are different formats, not duplicates.
 - Move duplicates to quarantine; never delete in place.
+
+## GUI cleanup
+
+The optional web GUI (`gui/`) keeps the same boundaries:
+
+1. The server accepts only paths that exist in the selected scan's `Junk` list; arbitrary paths are rejected.
+2. `review` items are rejected; `elevated` items are skipped when the process is not elevated.
+3. Protected paths and dangerous roots (drive root, `Windows`, `Program Files`, `ProgramData`, user profile roots) are refused in both Node and PowerShell.
+4. Execution requires `confirm: true`, plus `acknowledgeRisky: true` when any selected item is `confirm` level.
+5. Preview is read-only and re-measures current sizes.
+6. Every real execution writes `reports/clean/<timestamp>/manifest.csv`.
+7. The server binds to `127.0.0.1` by default and rejects cross-origin mutating requests.
+8. AI plans are validated against the scan: cleanup paths must exist in `Junk`, media sources must be scanned media folders, and migration sources must be scanned migration candidates. Destinations are checked against protected paths and source containment.
+9. App uninstall does not delete installation folders directly. It re-reads the uninstall entry from the registry (matching the scan by name/version/command) and runs the app's own uninstaller. The user must confirm first.

@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('scan', 'report', 'clean', 'organize', 'dedupe', 'skills', 'version', 'help')]
+    [ValidateSet('scan', 'report', 'audit', 'clean', 'organize', 'dedupe', 'skills', 'version', 'help')]
     [string]$Command = 'help',
 
     [string[]]$Drives,
@@ -31,6 +31,7 @@ $ErrorActionPreference = 'Stop'
 $script:PcRoot = Split-Path -Parent $PSCommandPath
 . (Join-Path $script:PcRoot 'lib\Core.ps1')
 . (Join-Path $script:PcRoot 'lib\Inventory.ps1')
+. (Join-Path $script:PcRoot 'lib\Strategy.ps1')
 . (Join-Path $script:PcRoot 'lib\Classify.ps1')
 . (Join-Path $script:PcRoot 'lib\Report.ps1')
 . (Join-Path $script:PcRoot 'lib\Clean.ps1')
@@ -44,6 +45,7 @@ pc-manager - fast Windows disk inventory and AI-ready reports
 Usage:
   pc-manager scan [-Drives C,D,E] [-Fast] [-Exclude <dir1,dir2>] [-Parallel] [-Output reports]
   pc-manager report -ScanPath reports\scan-xxx.json [-Output report.md] [-Format md|html]
+  pc-manager audit -ScanPath reports\scan-xxx.json [-Output audit.md] [-Json]
   pc-manager clean [-ScanPath scan.json] [-Category cache|system|installers|orphans|recycle] [-Execute] [-Admin]
   pc-manager organize -Source C:\Path -Destination D:\Path [-Execute]
   pc-manager organize -Source E:\Photos [-NoExif] [-Execute]  # photo year/month organizer
@@ -89,6 +91,30 @@ switch ($Command) {
         Write-Host "Report: $outFile"
     }
 
+    'audit' {
+        if (-not $ScanPath) { throw 'audit requires -ScanPath <scan.json>' }
+        $scan = Get-ScanFromPath $ScanPath
+        if (-not $scan.PSObject.Properties['Junk']) { $scan = Add-PcAnalysis -Scan $scan }
+        # Recompute so the audit reflects the current strategy rules instead of
+        # a possibly stale Audit object embedded in the scan file.
+        $audit = Invoke-StorageAudit -Scan $scan
+        if ($Json) {
+            $audit | ConvertTo-Json -Depth 12
+            return
+        }
+        $markdown = New-StorageAuditMarkdown -Audit $audit
+        $outFile = if ($Output) {
+            $Output
+        } else {
+            Join-Path (Join-Path $script:PcRoot 'reports') ("audit-{0}.md" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+        }
+        $parent = Split-Path -Parent $outFile
+        if ($parent) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+        Set-Content -LiteralPath $outFile -Value $markdown -Encoding UTF8
+        Write-Host "Audit: $outFile"
+        Write-Host ("Health: {0}/100 ({1}) · Findings: {2}" -f $audit.HealthScore, $audit.Grade, @($audit.Findings).Count)
+    }
+
     'clean' {
         $scan = Get-ScanFromPath $ScanPath
         $config = Read-PcConfig
@@ -104,7 +130,7 @@ switch ($Command) {
     'organize' {
         if (-not $Source) { throw 'organize requires -Source' }
         if ($Destination) {
-            Invoke-Organize -Source $Source -Destination $Destination -Execute:$Execute -Force:$Force
+            Invoke-Organize -Source $Source -Destination $Destination -Execute:$Execute -Force:$Force | Out-Null
         } else {
             Invoke-OrganizePhotos -Source $Source -Execute:$Execute -NoExif:$NoExif
         }

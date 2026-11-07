@@ -169,6 +169,17 @@ function Invoke-PcScan {
     }
     $normalized = @($normalized | Select-Object -Unique)
 
+    # -File CLI arguments arrive as one string per parameter; split comma lists here too.
+    $normalizedExcludes = @()
+    foreach ($d in @($ExcludeDirs)) {
+        foreach ($part in ([string]$d -split ',')) {
+            $x = $part.Trim()
+            if ($x) { $normalizedExcludes += $x }
+        }
+    }
+    $normalizedExcludes = @($normalizedExcludes | Select-Object -Unique)
+    $ExcludeDirs = $normalizedExcludes
+
     if (-not $Parallel -or $normalized.Count -eq 1 -or $PSVersionTable.PSVersion.Major -lt 7) {
         $driveResults = @()
         foreach ($d in $normalized) {

@@ -5,7 +5,57 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-11-07
+
+### Added
+
+- Local web GUI (`gui/`) built with Node.js built-in modules only: overview, drives, apps, migration, and diagnostics views; new scans; live job logs over SSE.
+- Per-item cleanup selection with a mandatory preview -> confirm -> execute flow, administrator awareness, and `reports/clean/<timestamp>/manifest.csv`.
+- `Invoke-PcCleanSelection` with protected-path checks (`WinSxS`, `Windows\Installer`, `Package Cache`, pagefile/hiberfil), recycle-bin detection, and structured per-item results.
+- `scripts/start-gui.ps1` launcher, including `-Admin` relaunch.
+- Node test suite for path safety, scan compaction, AI planning, and HTTP API; PowerShell smoke tests for guarded cleanup and media organizing.
+- Multi-drive selection in the GUI: `/api/drives` lists fixed drives, and new scans default to all detected drives.
+- App uninstall from the Apps view: confirms first, re-reads the registry entry, and runs the app's own uninstaller.
+- AI suggestions tab with editable, copyable task instructions for media archiving, safe/confirm cleanup, and migration; users can hand the text to an AI agent. The read-only preview/execute API remains available.
+- Single-page shell with a left navigation sidebar for current and future tools (system analysis, etc.), compact overview, icon actions, and a custom scan picker.
+- Top job progress bar replacing the side drawer; click it to see live logs, per-item progress, and cancel.
+- New Overview page: health score ring, CPU/memory/GPU/motherboard/physical disk details, storage allocation, top consumers, and audit findings. The old inline overview and the separate Migration/Diagnostics tabs were removed; migration advice lives in AI suggestions.
+- `/api/system` hardware endpoint (CIM + nvidia-smi VRAM fallback), system-info cache, and responsive small-card layout.
+- New monitor + AI sparkle brand logo, favicon, and the "AI 系统清理" slogan.
+- AI suggestion cards can be ignored per scan (persisted in localStorage) and restored later.
+- The old "重新分析" action is now "复制分析提示词": it copies a complete agent prompt using the current scan and audit instead of re-running the local planner.
+- Clickable permission chip next to the sidebar title with an admin/standard mode menu and an `/api/relaunch` action for requesting elevation.
+- `Invoke-OrganizeMedia`: archive photos/videos by `YYYY\YYYY-MM` with collision handling and CSV manifest.
+- `Invoke-OrganizeMedia` accepts an optional `-DateResolver` scriptblock so callers can override the archive date per file, for example to use an event folder date when EXIF is known to be wrong.
+- `Invoke-Organize` now returns structured results and writes a manifest when moving a directory + junction.
+- Repository-level storage strategy: `docs/storage-strategy.md` with capacity budgets, tiering, directory conventions, repo/workspace rules, lifecycle, path hygiene, and P0/P1/P2 thresholds.
+- `audit` command and `lib/Strategy.ps1`: health score, drive roles, capacity/workload summary, findings, tier plan, and top consumers from a scan.
+- `storage-strategy` skill for agent-driven space analysis, plus a machine-specific analysis in `docs/analysis/`.
+- Scans now include an `Audit` object; GUI AI suggestions read audit findings and generate "storage strategy" cards.
+- Large archive, download root, workspace, hibernation file, and media-organization checks in the audit.
+- Media AI plans no longer apply the global photo/video total to a fallback folder. Generic media roots and fallback folders are labeled "待预览"; the real file count/size is measured by the read-only preview.
+- `scripts/consolidate-downloads.ps1`: dry-run-first download-root consolidation with per-file moves, collision handling, and per-file manifest. Same-volume and cross-volume sources are supported; locked files are reported instead of aborting the whole folder.
+
+### Fixed
+
+- `-Exclude` values passed through `pwsh -File` are normalized as comma-separated lists.
+
+### Changed
+
+- `clean` now uses the shared selection engine and writes a CSV manifest; dry-run output includes preview status per item.
+- AI suggestions are grouped into three fixed categories: 媒体文件建议 (media), 工程文件建议 (engineering), and 缓存管理文件建议 (cache). The GUI shows one section per category, and the `storage-strategy` skill requires the same grouping.
+- Version bumped to 0.2.0.
+
+## [0.1.2] - 2026-11-07
+
+### Added
+
+- Integrated windows-c-drive-cleanup features: junk candidate catalog, initial `clean` command integration, and orphan detection.
+
+### Fixed
+
+- Restored the truncated `lib/Core.ps1`, which was missing `Get-FixedDrives`, `Get-DirSizeMB`, `Read-PcConfig`, and other helpers.
+- `pc-manager version` now reports the version (`0.1.2`).
 
 ## [0.1.1] - 2026-11-07
 
@@ -51,6 +101,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Duplicate `%TEMP%` and `%LOCALAPPDATA%\Temp` entries are deduplicated.
 - Photo organizer skips already-organized `YYYY` and `YYYY-MM_*` directories.
 
-[Unreleased]: https://github.com/jiuhew/pc-manager/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/jiuhew/pc-manager/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/jiuhew/pc-manager/compare/v0.1.2...v0.2.0
+[0.1.2]: https://github.com/jiuhew/pc-manager/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/jiuhew/pc-manager/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/jiuhew/pc-manager/releases/tag/v0.1.0

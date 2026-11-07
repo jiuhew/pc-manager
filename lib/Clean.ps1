@@ -1,3 +1,184 @@
+function Get-PcProtectedPaths {
+    return @(
+        "$env:SystemRoot\WinSxS",
+        "$env:SystemRoot\Installer",
+        "$env:ProgramData\Package Cache",
+        "$env:SystemRoot\System32",
+        "$env:SystemRoot\SysWOW64",
+        "$env:SystemRoot\System Volume Information",
+        "$env:SystemDrive\System Volume Information",
+        "$env:SystemDrive\pagefile.sys",
+        "$env:SystemDrive\hiberfil.sys",
+        "$env:SystemDrive\swapfile.sys",
+        "$env:SystemDrive\Recovery",
+        "$env:SystemDrive\Config.Msi"
+    ) | Where-Object { $_ }
+}
+
+function Test-PcProtectedPath {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Path)
+
+    try { $full = [System.IO.Path]::GetFullPath($Path).TrimEnd('\') } catch { return $true }
+    if (-not $full) { return $true }
+
+    foreach ($p in (Get-PcProtectedPaths)) {
+        $pp = [System.IO.Path]::GetFullPath($p).TrimEnd('\')
+        if ($full.Equals($pp, [System.StringComparison]::OrdinalIgnoreCase) -or
+            $full.StartsWith($pp + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+    }
+
+    # Refuse cleaning an entire well-known root (deleting children of these is catastrophic).
+    $roots = @(
+        [System.IO.Path]::GetPathRoot($full),
+        $env:SystemRoot,
+        (Join-Path $env:SystemDrive 'Users'),
+        $env:ProgramFiles,
+        ${env:ProgramFiles(x86)},
+        $env:ProgramData,
+        $env:USERPROFILE,
+        $env:LOCALAPPDATA,
+        $env:APPDATA
+    )
+    foreach ($r in $roots) {
+        if (-not $r) { continue }
+        try { $rr = [System.IO.Path]::GetFullPath($r).TrimEnd('\') } catch { continue }
+        if ($full.Equals($rr, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+    }
+    return $false
+}
+
+function Invoke-PcCleanSelection {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$Items,
+        [switch]$Execute,
+        [string]$ManifestRoot,
+        [scriptblock]$OnItem
+    )
+
+    $isAdmin = Test-IsAdmin
+    $results = [System.Collections.Generic.List[object]]::new()
+    $freeBefore = $null
+    try { $freeBefore = (Get-DriveInfo -Drive $env:SystemDrive).FreeGB } catch { }
+    $index = 0
+
+    foreach ($i in @($Items)) {
+        $index++
+        $name = [string]$i.Name
+        $rawPath = [string]$i.Path
+        $category = [string]$i.Category
+        $safety = [string]$i.Safety
+        $mode = [string]$i.Mode
+        if (-not $mode) { $mode = 'path' }
+        $effectiveMode = $mode
+        $reason = [string]$i.Reason
+        $sizeMB = 0.0
+        $status = 'skipped'
+        $detail = ''
+        $full = $rawPath
+
+        try { if ($rawPath) { $full = [System.IO.Path]::GetFullPath($rawPath) } } catch { }
+
+        if (-not $full -or -not (Test-Path -LiteralPath $full -ErrorAction SilentlyContinue)) {
+            $detail = 'Path not found'
+        } elseif (Test-PcProtectedPath -Path $full) {
+            $detail = 'Protected system path'
+        } elseif ($safety -eq 'review') {
+            $detail = 'Needs manual review'
+        } elseif ($safety -eq 'elevated' -and -not $isAdmin) {
+            $detail = 'Needs elevation'
+        } elseif ($effectiveMode -notin @('path', 'contents', 'recycle')) {
+            $detail = "Unknown mode: $effectiveMode"
+        } else {
+            $item = Get-Item -LiteralPath $full -Force -ErrorAction SilentlyContinue
+            if (-not $item) {
+                $detail = 'Path is not readable'
+            } else {
+                if ($category -eq 'recycle' -or $item.Name -eq '$Recycle.Bin') { $effectiveMode = 'recycle' }
+                $sizeMB = if ($item.PSIsContainer) { Get-DirSizeMB -Path $full } else { [math]::Round($item.Length / 1MB, 1) }
+
+                if (-not $Execute) {
+                    $status = 'would-clean'
+                    $detail = "Would clean with mode '$effectiveMode'"
+                } else {
+                    try {
+                        switch ($effectiveMode) {
+                            'contents' {
+                                Get-ChildItem -LiteralPath $full -Force -ErrorAction Stop |
+                                    Remove-Item -Recurse -Force -Confirm:$false -ErrorAction Stop
+                            }
+                            'recycle' {
+                                $driveLetter = $full.Substring(0, 1)
+                                Clear-RecycleBin -DriveLetter $driveLetter -Force -ErrorAction Stop
+                            }
+                            default {
+                                Remove-Item -LiteralPath $full -Recurse -Force -Confirm:$false -ErrorAction Stop
+                            }
+                        }
+                        $status = 'cleaned'
+                        $detail = 'Cleaned'
+                    } catch {
+                        $status = 'failed'
+                        $detail = $_.Exception.Message
+                    }
+                }
+            }
+        }
+
+        $row = [pscustomobject]@{
+            Index    = $index
+            Name     = $name
+            Path     = $full
+            Category = $category
+            Safety   = $safety
+            Mode     = $effectiveMode
+            SizeMB   = $sizeMB
+            Status   = $status
+            Detail   = $detail
+            Reason   = $reason
+        }
+        $results.Add($row)
+        if ($OnItem) { try { & $OnItem $row } catch { } }
+    }
+
+    $cleanedMB = 0.0
+    foreach ($r in $results) {
+        if ($r.Status -eq 'cleaned') { $cleanedMB += [double]$r.SizeMB }
+    }
+
+    $manifestPath = $null
+    if ($Execute) {
+        $root = if ($ManifestRoot) {
+            $ManifestRoot
+        } else {
+            $pcRoot = if ($script:PcRoot) { $script:PcRoot } else { (Get-Location).Path }
+            Join-Path $pcRoot (Join-Path 'reports\clean' (Get-Date -Format 'yyyyMMdd-HHmmss'))
+        }
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $manifestPath = Join-Path $root 'manifest.csv'
+        $results | Select-Object Index, Name, Path, Category, Safety, Mode, SizeMB, Status, Detail, Reason |
+            Export-Csv -LiteralPath $manifestPath -NoTypeInformation -Encoding utf8BOM
+    }
+
+    $freeAfter = $null
+    try { $freeAfter = (Get-DriveInfo -Drive $env:SystemDrive).FreeGB } catch { }
+    $totalMB = ($results | Measure-Object SizeMB -Sum).Sum
+
+    return [pscustomobject]@{
+        Execute      = [bool]$Execute
+        IsAdmin      = [bool]$isAdmin
+        Items        = @($results)
+        TotalMB      = [math]::Round([double]$totalMB, 1)
+        CleanedMB    = [math]::Round($cleanedMB, 1)
+        ManifestPath = $manifestPath
+        FreeBeforeGB = $freeBefore
+        FreeAfterGB  = $freeAfter
+    }
+}
+
 function Invoke-Clean {
     [CmdletBinding()]
     param(
@@ -13,54 +194,125 @@ function Invoke-Clean {
     }
 
     if (-not $Execute) {
-        $items | Select-Object Name, Category, SizeGB, Safety, Mode, Path |
-            Format-Table -AutoSize | Out-String -Width 200 | Write-Host
-        $total = ($items | Measure-Object SizeGB -Sum).Sum
-        Write-Host ("Total: {0:N2} GB. Re-run with -Execute to clean." -f $total)
+        $preview = Invoke-PcCleanSelection -Items $items
+        $preview.Items | Select-Object Name, Category, SizeMB, Safety, Mode, Status, Detail, Path |
+            Format-Table -AutoSize | Out-String -Width 220 | Write-Host
+        Write-Host ("Total: {0:N2} GB. Re-run with -Execute to clean." -f ($preview.TotalMB / 1024))
         return
     }
 
-    $isAdmin = Test-IsAdmin
-    $beforeC = (Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$env:SystemDrive'").FreeSpace
-    $cleaned = 0.0
-
-    foreach ($i in $items) {
-        if ($i.Safety -eq 'review') {
-            Write-Host "SKIP (review): $($i.Path)"
-            continue
+    $result = Invoke-PcCleanSelection -Items $items -Execute
+    foreach ($row in $result.Items) {
+        $label = switch ($row.Status) {
+            'cleaned' { 'CLEANED' }
+            'failed' { 'FAIL' }
+            default { 'SKIP' }
         }
-        if ($i.Safety -eq 'elevated' -and -not $isAdmin) {
-            Write-Host "SKIP (needs admin): $($i.Path)"
-            continue
-        }
+        $suffix = if ($row.Detail -and $row.Status -ne 'cleaned') { " ($($row.Detail))" } else { '' }
+        Write-Host ("{0}: {1}{2}" -f $label, $row.Path, $suffix)
+    }
+    Write-Host ''
+    Write-Host ("Cleaned (nominal): {0:N2} GB" -f ($result.CleanedMB / 1024))
+    Write-Host ("System drive free: {0:N2} GB -> {1:N2} GB" -f $result.FreeBeforeGB, $result.FreeAfterGB)
+    if ($result.ManifestPath) { Write-Host "Manifest: $($result.ManifestPath)" }
+}
 
-        try {
-            switch ($i.Mode) {
-                'contents' {
-                    Get-ChildItem -LiteralPath $i.Path -Force -ErrorAction SilentlyContinue |
-                        Remove-Item -Recurse -Force -Confirm:$false -ErrorAction SilentlyContinue
-                    Write-Host "CLEARED: $($i.Path)"
-                }
-                'recycle' {
-                    $driveLetter = $i.Path.Substring(0, 1)
-                    Clear-RecycleBin -DriveLetter $driveLetter -Force -ErrorAction Stop
-                    Write-Host "EMPTIED: $($i.Path)"
-                }
-                default {
-                    Remove-Item -LiteralPath $i.Path -Recurse -Force -Confirm:$false -ErrorAction Stop
-                    Write-Host "REMOVED: $($i.Path)"
-                }
-            }
-            $cleaned += [double]$i.SizeGB
-        } catch {
-            Write-Host "FAIL: $($i.Path) -> $($_.Exception.Message)"
+function Invoke-PcAppUninstall {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$App)
+
+    $paths = @(
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
+        'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*'
+    )
+
+    $name = [string]$App.DisplayName
+    if (-not $name) {
+        return [pscustomobject]@{ Status = 'failed'; Message = 'App has no DisplayName.'; AppName = $name }
+    }
+
+    $entries = @(Get-ItemProperty $paths -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -eq $name })
+    $entry = $null
+    if ($App.DisplayVersion) {
+        $entry = $entries | Where-Object {
+            $_.DisplayVersion -eq $App.DisplayVersion -and $_.UninstallString -eq $App.UninstallString
+        } | Select-Object -First 1
+    }
+    if (-not $entry -and $App.UninstallString) {
+        $entry = $entries | Where-Object { $_.UninstallString -eq $App.UninstallString } | Select-Object -First 1
+    }
+    if (-not $entry) { $entry = $entries | Select-Object -First 1 }
+    if (-not $entry -or -not $entry.UninstallString) {
+        return [pscustomobject]@{
+            Status   = 'failed'
+            AppName  = $name
+            Message  = 'Uninstall entry was not found in the registry. Re-scan and try again.'
         }
     }
 
-    $afterC = (Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$env:SystemDrive'").FreeSpace
-    Write-Host ''
-    Write-Host ("Cleaned (nominal): {0:N2} GB" -f $cleaned)
-    Write-Host ("System drive free: {0:N2} GB -> {1:N2} GB" -f ($beforeC / 1GB), ($afterC / 1GB))
+    $command = [string]$entry.UninstallString
+    $exe = $null
+    $arguments = ''
+
+    if ($command -match '^\s*"([^"]+)"\s*(.*)$') {
+        $exe = $Matches[1]
+        $arguments = $Matches[2]
+    } elseif ($command -match '(?i)^\s*(MsiExec\.exe|msiexec\.exe)\b\s*(.*)$') {
+        $exe = 'msiexec.exe'
+        $arguments = $Matches[2]
+    } elseif ($command -match '^\s*([A-Za-z]:\\[^\r\n]*?\.exe)\s*(.*)$') {
+        $exe = $Matches[1]
+        $arguments = $Matches[2]
+    }
+
+    if (-not $exe) {
+        return [pscustomobject]@{
+            Status  = 'failed'
+            AppName = $name
+            Message = "Unsupported uninstall command: $command"
+        }
+    }
+
+    if ($exe -notmatch '(?i)^msiexec(\.exe)?$' -and -not (Test-Path -LiteralPath $exe -ErrorAction SilentlyContinue)) {
+        return [pscustomobject]@{
+            Status  = 'failed'
+            AppName = $name
+            Message = "Uninstaller not found: $exe"
+        }
+    }
+
+    try {
+        $process = Start-Process -FilePath $exe -ArgumentList $arguments -PassThru -ErrorAction Stop
+        $exited = $process.WaitForExit(5000)
+        if ($exited) {
+            return [pscustomobject]@{
+                Status     = 'completed'
+                AppName    = $name
+                Executable = $exe
+                Arguments  = $arguments
+                Pid        = $process.Id
+                ExitCode   = $process.ExitCode
+                Message    = 'Uninstaller finished.'
+            }
+        }
+        return [pscustomobject]@{
+            Status     = 'started'
+            AppName    = $name
+            Executable = $exe
+            Arguments  = $arguments
+            Pid        = $process.Id
+            Message    = 'Uninstaller started. Finish it in the window that opened.'
+        }
+    } catch {
+        return [pscustomobject]@{
+            Status     = 'failed'
+            AppName    = $name
+            Executable = $exe
+            Arguments  = $arguments
+            Message    = $_.Exception.Message
+        }
+    }
 }
 
 function Invoke-Dedupe {
