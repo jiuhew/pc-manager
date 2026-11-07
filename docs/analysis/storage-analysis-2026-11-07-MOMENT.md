@@ -321,3 +321,26 @@ Manifest：
 - `reports/organize/ai-media-20261107-190634/4-media-photo/manifest.csv`
 
 核对文件：`reports/media-final-check-190634.json`。
+
+## 14. 剩余照片整理（2026-11-07 19:19）
+
+把两条媒体建议未覆盖的 Desktop 照片也归入 `Pictures`：
+
+| 来源 | 目标 | 移动 | 失败 | 说明 |
+|---|---|---:|---:|---|
+| `Desktop\Photo` | `C:\Users\wjh96\Pictures` | 1,261 | 0 | 约 8.53 GB 照片 |
+| `Desktop\pocket` | `C:\Users\wjh96\Pictures` | 56 | 0 | 约 0.69 GB 照片 |
+
+整理后：
+
+- `Pictures` 年月目录：2025（1,101 个 / 7.37 GB）、2026（2,220 个 / 18.26 GB），共 3,321 张照片
+- `Pictures`、`Videos` 年月目录外媒体：0
+- `Desktop\Photo`、`Desktop\pocket` 中剩余照片/视频：0
+- C: 空闲 525.12 GB
+
+Manifest：
+
+- `reports/organize/media-extras-20261107-191951/1-desktop-photo/manifest.csv`
+- `reports/organize/media-extras-20261107-191951/2-desktop-pocket/manifest.csv`
+
+核对文件：`reports/media-extras-verify-191951.json`。
