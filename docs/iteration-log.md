@@ -78,6 +78,12 @@ Real-world lessons that shaped `pc-manager`.
 - Removed the top topbar, moved clean filters into table headers, and simplified the Apps panel header.
 - Version bumped to 0.3.0.
 
+## 2026-11-07 - v0.3.1
+
+- Added `pc-manager empty-dirs` with `cache` and `all-cache` batches: dry-run by default, re-checks emptiness before deletion, skips reparse/cloud/protected paths, and writes CSV preview/manifest plus summary JSON.
+- Kept the single-drive media and migration fixes: in-place organization, already-organized files are skipped instead of duplicated, and media roots are derived from scanned files when `MediaFolders` is empty.
+- Version bumped to 0.3.1.
+
 ## Tool improvements
 
 - Added cloud placeholder handling (`0x400000`, `0x1000`, `0x100000`).

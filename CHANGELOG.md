@@ -5,7 +5,11 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.1] - 2026-11-07
+
+### Added
+
+- `pc-manager empty-dirs` command with `-Batch cache|all-cache`. It finds empty directories under `%USERPROFILE%\AppData` that match known cache roots or cache/temp/log path segments, dry-runs by default, re-checks emptiness at execution time, skips protected paths, reparse points, cloud placeholders, `Packages`, WeChat, OneDrive, and `.git`, and writes `preview.csv` or `manifest.csv` plus `summary.json`.
 
 ### Fixed
 
@@ -13,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - AI media plans discover media roots from scanned media files when `scan.Media.MediaFolders` is empty, so media stored under Desktop or localized folders still gets a plan.
 - On single-drive machines, migration candidates are surfaced as advisories with an empty `SuggestedTarget` (reports label them `external/compact (single drive)`) instead of being hidden.
 - Audit workspace guidance no longer hardcodes `D:\Work`.
+
+### Changed
+
+- Version bumped to 0.3.1.
 
 ## [0.3.0] - 2026-11-07
 
