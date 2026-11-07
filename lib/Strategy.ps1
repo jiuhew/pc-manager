@@ -242,9 +242,9 @@ function Invoke-StorageAudit {
     if ($mediaDrives.Count -gt 1) {
         Add-StorageFinding -List $findings -Id 'media-scattered' -Severity 'P2' -Category 'path' `
             -Title 'Media folders are spread across multiple drives' `
-            -Detail ("Media folders exist on: {0}. Consolidate the canonical library on one data drive." -f ($mediaDrives -join ', ')) `
+            -Detail ("Media folders exist on: {0}. Consolidate the canonical library on one drive." -f ($mediaDrives -join ', ')) `
             -Evidence (($mediaFolders | ForEach-Object { "$($_.Drive)\$($_.Folder)" }) -join ', ') `
-            -Action 'Choose one primary Media root and archive older items there.'
+            -Action 'Choose one primary Media root on an existing drive, or archive older items to external storage.'
     }
 
     $badNamePattern = '(?i)^(new folder|copy of|temp|tmp|old|_old|_backup)'
@@ -301,7 +301,7 @@ function Invoke-StorageAudit {
             -Title 'Project workspaces are scattered' `
             -Detail ("Found {0} likely workspace roots. Use one canonical workspace per machine and archive inactive repos." -f $workspaceRoots.Count) `
             -Evidence ($workspaceRoots -join ', ') `
-            -Action 'Pick one workspace root (for example D:\Work), move active repos there, and archive the rest.'
+            -Action ("Pick one workspace root on an existing drive (for example {0}\Workspace), move active repos there, and archive the rest." -f $systemDrive)
     }
     if ($downloadRoots.Count -gt 1) {
         Add-StorageFinding -List $findings -Id 'downloads-scattered' -Severity 'P2' -Category 'path' `

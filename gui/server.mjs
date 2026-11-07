@@ -217,7 +217,7 @@ async function validateMediaPlan(scan, plan) {
   if (destinationPath === normalizePath(path.win32.parse(destination).root)) {
     throw new ApiError(400, 'Refusing to write directly to a drive root');
   }
-  if (destinationPath === sourcePath || destinationPath.startsWith(`${sourcePath}\\`)) {
+  if (destinationPath !== sourcePath && destinationPath.startsWith(`${sourcePath}\\`)) {
     throw new ApiError(400, 'Destination cannot be inside the source');
   }
   if (!isMediaSourceAllowed(scan, source)) {

@@ -53,6 +53,23 @@ if ($resolved.Moved -ne 1) { throw "Expected 1 moved via resolver, got $($resolv
 if (-not (Test-Path -LiteralPath $expected2)) { throw "Date resolver target missing: $expected2" }
 Write-Host "OK: $expected2"
 
+Write-Host '=== in-place organize ==='
+$inPlace = Join-Path $tmp 'in-place'
+New-Item -ItemType Directory -Path $inPlace -Force | Out-Null
+$inPlaceFile = Join-Path $inPlace '2023-07-02_clip.mp4'
+[System.IO.File]::WriteAllBytes($inPlaceFile, (New-Object byte[] 1024))
+$manifestRoot3 = Join-Path $tmp 'manifest-in-place'
+$inPlaceResult = Invoke-OrganizeMedia -Source $inPlace -Destination $inPlace -Kind video -Execute -ManifestRoot $manifestRoot3
+$inPlaceExpected = Join-Path $inPlace '2023\2023-07\2023-07-02_clip.mp4'
+if ($inPlaceResult.Moved -ne 1) { throw "Expected 1 in-place moved, got $($inPlaceResult.Moved)" }
+if (-not (Test-Path -LiteralPath $inPlaceExpected)) { throw "In-place target missing: $inPlaceExpected" }
+$secondResult = Invoke-OrganizeMedia -Source $inPlace -Destination $inPlace -Kind video -Execute -ManifestRoot (Join-Path $tmp 'manifest-in-place-2')
+if ($secondResult.Skipped -ne 1) { throw "Expected 1 already-organized, got $($secondResult.Skipped)" }
+if ($secondResult.Moved -ne 0) { throw 'Second in-place run must not move files' }
+$duplicate = Join-Path $inPlace '2023\2023-07\2023-07-02_clip_1.mp4'
+if (Test-Path -LiteralPath $duplicate) { throw 'In-place run created a duplicate file' }
+Write-Host "OK: $inPlaceExpected (skipped on second run)"
+
 Write-Host '=== protected source ==='
 $blocked = $false
 try {

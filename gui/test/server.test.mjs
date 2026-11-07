@@ -78,8 +78,15 @@ test('drives and AI plan endpoints respond', async () => {
     assert.equal(typeof system.system.hostname, 'string');
 
     const plans = await fetch(`${base}/api/ai/plans/${SCAN_ID}`).then((response) => response.json());
-    assert.equal(plans.plans.length, 2);
-    assert.deepEqual(plans.plans.map((plan) => plan.id), ['clean-safe', 'clean-confirm']);
+    const ids = plans.plans.map((plan) => plan.id);
+    assert.ok(ids.includes('clean-safe'));
+    assert.ok(ids.includes('clean-confirm'));
+    assert.equal(ids.filter((id) => id.startsWith('clean-')).length, 2);
+    const systemDrive = (process.env.SystemDrive || 'C:').toUpperCase();
+    const hasSecondDrive = drives.drives.some(
+      (drive) => String(drive.id).toUpperCase() !== systemDrive && Number(drive.freeGB) > 0
+    );
+    assert.equal(ids.includes('single-drive-strategy'), !hasSecondDrive);
   });
 });
 

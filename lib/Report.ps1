@@ -76,7 +76,8 @@ function New-MarkdownReport {
     [void]$sb.AppendLine('## Migration candidates')
     $rows = @()
     foreach ($m in ($Scan.Migration | Select-Object -First 30)) {
-        $rows += , @($m.Name, $m.SizeGB, $m.SuggestedTarget, $m.Path)
+        $target = if ($m.SuggestedTarget) { $m.SuggestedTarget } else { 'external/compact (single drive)' }
+        $rows += , @($m.Name, $m.SizeGB, $target, $m.Path)
     }
     [void]$sb.Append((New-MdTable -Headers @('Item', 'Size GB', 'Suggested target', 'Path') -Rows $rows))
 

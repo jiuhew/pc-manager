@@ -152,84 +152,86 @@ test('audit findings are grouped into media, engineering, and cache', async () =
   assert.deepEqual(groups, ['media', 'engineering', 'cache']);
 });
 
-test('single-drive media plans use the user Videos and Pictures folders', () => {
+const SINGLE_DRIVE = [{ id: 'C:', freeGB: 400, totalGB: 950 }];
+
+test('single-drive media plans organize on C: and explain no space is freed', () => {
   const scan = {
     User: 'tester',
     Junk: [],
     Migration: [],
     Media: {
-      PhotoGB: 10,
+      PhotoGB: 0,
       VideoGB: 12,
-      MediaFolders: [{ Drive: 'C:', Folder: 'Downloads', SizeGB: 22, Files: 100 }]
+      MediaFolders: [{ Drive: 'C:', Folder: 'Videos', SizeGB: 12, Files: 4 }]
     }
   };
-  const plans = generatePlans(scan, [{ id: 'C:', freeGB: 50, totalGB: 100, system: true }]);
-  const video = plans.find((plan) => plan.id === 'media-video');
-  const photo = plans.find((plan) => plan.id === 'media-photo');
-  assert.ok(video);
-  assert.ok(photo);
-  assert.equal(video.params.destination, 'C:\\Users\\tester\\Videos');
-  assert.equal(photo.params.destination, 'C:\\Users\\tester\\Pictures');
-  assert.equal(video.adaptive.strategy, 'user-library');
-  assert.equal(photo.adaptive.strategy, 'user-library');
-  assert.match(video.description, /没有可用的第二块数据盘/);
+  const plans = generatePlans(scan, SINGLE_DRIVE);
+  const media = plans.find((plan) => plan.id === 'media-video');
+  assert.ok(media);
+  assert.equal(media.params.destination, 'C:\\Users\\tester\\Videos');
+  assert.match(media.description, /同盘整理/);
+  assert.match(media.description, /不新建 Media/);
+  assert.equal(media.params.destination.startsWith('D:'), false);
 });
 
-test('single-drive media plans do not create a no-op for user folders', () => {
-  const scan = {
-    User: 'tester',
-    Junk: [],
-    Migration: [],
-    Media: { PhotoGB: 10, VideoGB: 12, MediaFolders: [] }
-  };
-  const plans = generatePlans(scan, [{ id: 'C:', freeGB: 50, totalGB: 100, system: true }]);
-  assert.equal(plans.some((plan) => plan.category === 'media'), false);
-});
-
-test('single-drive machines do not get cross-drive migration plans', () => {
+test('single-drive migration candidates become advisories instead of D: moves', () => {
   const scan = {
     User: 'tester',
     Junk: [],
     Media: { PhotoGB: 0, VideoGB: 0, MediaFolders: [] },
     Migration: [{
-      Name: 'CUDA',
-      Path: 'C:\\CUDA',
-      SizeGB: 8,
-      SuggestedTarget: 'D:\\CUDA',
-      Reason: 'Move it'
-    }]
+      Name: 'wsl',
+      Path: 'C:\\Users\\tester\\AppData\\Local\\Docker\\wsl',
+      SizeGB: 18,
+      SuggestedTarget: 'D:\\Docker\\wsl',
+      Reason: 'Docker WSL disk image'
+    }],
+    Audit: { HealthScore: 85, Findings: [] }
   };
-  const plans = generatePlans(scan, [{ id: 'C:', freeGB: 50, totalGB: 100, system: true }]);
-  assert.equal(plans.some((plan) => plan.type === 'migrate'), false);
+  const plans = generatePlans(scan, SINGLE_DRIVE);
+  const migration = plans.find((plan) => plan.id === 'migrate-0');
+  assert.ok(migration);
+  assert.equal(migration.type, 'advisory');
+  assert.equal(migration.params.destination, undefined);
+  assert.match(migration.summary, /单盘/);
+  assert.match(migration.description, /没有第二块内置盘/);
+  assert.ok(plans.some((plan) => plan.id === 'single-drive-strategy'));
 });
 
-test('migration is skipped when the target drive is missing or too small', () => {
+test('desktop media roots are derived from scanned large files and allowed', () => {
   const scan = {
     User: 'tester',
     Junk: [],
+    Migration: [],
     Media: { PhotoGB: 0, VideoGB: 0, MediaFolders: [] },
-    Migration: [
-      { Name: 'CUDA', Path: 'C:\\CUDA', SizeGB: 8, SuggestedTarget: 'E:\\CUDA' },
-      { Name: 'Games', Path: 'C:\\Games', SizeGB: 80, SuggestedTarget: 'D:\\Games' }
-    ]
+    Drives: [{
+      Id: 'C:',
+      LargeFiles: [{ Path: 'C:\\Users\\tester\\Desktop\\Wedding\\clip.mp4', SizeMB: 2048 }]
+    }]
   };
-  const plans = generatePlans(scan, [
-    { id: 'C:', freeGB: 50, totalGB: 100, system: true },
-    { id: 'D:', freeGB: 20, totalGB: 100 }
-  ]);
-  assert.equal(plans.some((plan) => plan.type === 'migrate'), false);
+  const plans = generatePlans(scan, SINGLE_DRIVE);
+  const media = plans.find((plan) => plan.id === 'media-video');
+  assert.ok(media);
+  assert.equal(media.params.source, 'C:\\Users\\tester\\Desktop\\Wedding');
+  assert.equal(isMediaSourceAllowed(scan, media.params.source), true);
+  assert.equal(isMediaSourceAllowed(scan, 'C:\\Users\\tester\\AppData\\Local'), false);
 });
 
-test('user Videos and Pictures subfolders are valid media sources', () => {
+test('desktop media roots are not derived from cloud placeholders', () => {
   const scan = {
     User: 'tester',
-    Media: { MediaFolders: [{ Drive: 'E:', Folder: 'Videos', SizeGB: 1 }] },
-    Migration: []
+    Junk: [],
+    Migration: [],
+    Media: { PhotoGB: 0, VideoGB: 0, MediaFolders: [] },
+    Drives: [{
+      Id: 'C:',
+      Cloud: [{ Path: 'C:\\Users\\tester\\OneDrive' }],
+      LargeFiles: [{ Path: 'C:\\Users\\tester\\OneDrive\\Camera Roll\\clip.mp4', SizeMB: 2048 }]
+    }]
   };
-  assert.equal(isMediaSourceAllowed(scan, 'C:\\Users\\tester\\Videos'), true);
-  assert.equal(isMediaSourceAllowed(scan, 'C:\\Users\\tester\\Videos\\2024'), true);
-  assert.equal(isMediaSourceAllowed(scan, 'C:\\Users\\tester\\Pictures\\2024'), true);
-  assert.equal(isMediaSourceAllowed(scan, 'C:\\Users\\tester\\Downloads'), false);
+  const plans = generatePlans(scan, SINGLE_DRIVE);
+  assert.equal(plans.some((plan) => plan.id === 'media-video'), false);
+  assert.equal(isMediaSourceAllowed(scan, 'C:\\Users\\tester\\OneDrive\\Camera Roll'), false);
 });
 
 test('media and migration source allowlists match the scan', () => {

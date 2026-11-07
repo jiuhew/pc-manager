@@ -104,26 +104,24 @@ function Get-MigrationCandidates {
     $minGB = [double]$Config.minMigrationGB
     $rows = [System.Collections.Generic.List[object]]::new()
 
-    # Analyze the real machine first: only propose migration when a usable
-    # non-system data drive exists.
+    # Only suggest an alternate drive that actually exists. On single-drive
+    # machines we keep SuggestedTarget empty and let the caller propose
+    # compaction / external storage instead of a nonexistent D: path.
     $dataDrives = @($Scan.Drives | Where-Object {
-        $_.Id -and $_.Id -ne $env:SystemDrive -and [double]$_.FreeGB -gt 0
-    } | Sort-Object { [double]$_.FreeGB } -Descending)
-    if ($dataDrives.Count -eq 0) { return @() }
-
-    $targetDrive = $dataDrives[0]
-    $targetRoot = [string]$targetDrive.Id
-    $targetFreeGB = [double]$targetDrive.FreeGB
+        $_.Id -ne $env:SystemDrive -and [double]$_.FreeGB -gt 0
+    } | Sort-Object @{ Expression = { [double]$_.FreeGB }; Descending = $true })
+    $targetRoot = if ($dataDrives.Count -gt 0) { [string]$dataDrives[0].Id } else { $null }
+    $singleDriveNote = ' No second drive detected: clean/compact it or archive to external storage.'
 
     $known = @(
-        @{ Path = (Join-Path $env:USERPROFILE 'anaconda3'); Target = 'D:\anaconda3'; Reason = 'Conda environments are large and portable; move + junction.' },
-        @{ Path = (Join-Path $env:USERPROFILE 'miniconda3'); Target = 'D:\miniconda3'; Reason = 'Conda environments are large and portable; move + junction.' },
-        @{ Path = (Join-Path $env:LOCALAPPDATA 'Docker\wsl'); Target = 'D:\Docker\wsl'; Reason = 'Docker WSL disk image; move + junction or change Disk image location.' },
-        @{ Path = (Join-Path $env:USERPROFILE 'GitHub'); Target = 'D:\GitHub'; Reason = 'Git repositories are portable; move + junction.' },
-        @{ Path = (Join-Path $env:USERPROFILE 'Documents\GitHub'); Target = 'D:\GitHub'; Reason = 'Git repositories are portable; move + junction.' },
-        @{ Path = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA'; Target = 'D:\CUDA'; Reason = 'CUDA toolkit can be reinstalled to another drive.' },
-        @{ Path = 'C:\Program Files\Windows Kits'; Target = 'D:\Windows Kits'; Reason = 'Windows SDK can be reinstalled to another drive.' },
-        @{ Path = 'C:\Program Files (x86)\Microsoft Visual Studio'; Target = 'D:\Microsoft Visual Studio'; Reason = 'Visual Studio can be reinstalled to another drive.' }
+        @{ Path = (Join-Path $env:USERPROFILE 'anaconda3'); TargetName = 'anaconda3'; Reason = 'Conda environments are large and portable; move + junction.' },
+        @{ Path = (Join-Path $env:USERPROFILE 'miniconda3'); TargetName = 'miniconda3'; Reason = 'Conda environments are large and portable; move + junction.' },
+        @{ Path = (Join-Path $env:LOCALAPPDATA 'Docker\wsl'); TargetName = 'Docker\wsl'; Reason = 'Docker WSL disk image; move + junction or change Disk image location.' },
+        @{ Path = (Join-Path $env:USERPROFILE 'GitHub'); TargetName = 'GitHub'; Reason = 'Git repositories are portable; move + junction.' },
+        @{ Path = (Join-Path $env:USERPROFILE 'Documents\GitHub'); TargetName = 'GitHub'; Reason = 'Git repositories are portable; move + junction.' },
+        @{ Path = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA'; TargetName = 'CUDA'; Reason = 'CUDA toolkit can be reinstalled to another drive.' },
+        @{ Path = 'C:\Program Files\Windows Kits'; TargetName = 'Windows Kits'; Reason = 'Windows SDK can be reinstalled to another drive.' },
+        @{ Path = 'C:\Program Files (x86)\Microsoft Visual Studio'; TargetName = 'Microsoft Visual Studio'; Reason = 'Visual Studio can be reinstalled to another drive.' }
     )
 
     foreach ($k in $known) {
@@ -131,15 +129,15 @@ function Get-MigrationCandidates {
         $ki = Get-Item -LiteralPath $k.Path -Force -ErrorAction SilentlyContinue
         if ($ki -and (($ki.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)) { continue }
         $mb = Get-DirSizeMB -Path $k.Path
-        $sizeGB = [math]::Round($mb / 1024, 2)
-        if ($sizeGB -ge $minGB -and $sizeGB -le $targetFreeGB) {
+        if ($mb / 1024 -ge $minGB) {
+            $suggested = if ($targetRoot) { "$targetRoot\$($k.TargetName)" } else { '' }
+            $reason = if ($targetRoot) { $k.Reason } else { "$($k.Reason)$singleDriveNote" }
             $rows.Add([pscustomobject]@{
-                Name            = Split-Path $k.Path -Leaf
-                Path            = $k.Path
-                SizeGB          = $sizeGB
-                SuggestedTarget = ($k.Target -replace '^[A-Za-z]:', $targetRoot)
-                TargetFreeGB    = [math]::Round($targetFreeGB, 2)
-                Reason          = $k.Reason
+                Name           = Split-Path $k.Path -Leaf
+                Path           = $k.Path
+                SizeGB         = [math]::Round($mb / 1024, 2)
+                SuggestedTarget = $suggested
+                Reason         = $reason
             })
         }
     }
@@ -152,15 +150,15 @@ function Get-MigrationCandidates {
             ForEach-Object {
                 if (($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { return }
                 $mb = Get-DirSizeMB -Path $_.FullName
-                $sizeGB = [math]::Round($mb / 1024, 2)
-                if ($sizeGB -ge $minGB -and $sizeGB -le $targetFreeGB) {
+                if ($mb / 1024 -ge $minGB) {
+                    $suggested = if ($targetRoot) { "$targetRoot\wsl" } else { '' }
+                    $reason = if ($targetRoot) { 'Use wsl --export / --import and restore the default user.' } else { "Use wsl --export to external storage or compact the distro.$singleDriveNote" }
                     $rows.Add([pscustomobject]@{
                         Name            = "WSL: $($_.Name)"
                         Path            = $_.FullName
-                        SizeGB          = $sizeGB
-                        SuggestedTarget = "$targetRoot\wsl"
-                        TargetFreeGB    = [math]::Round($targetFreeGB, 2)
-                        Reason          = 'Use wsl --export / --import and restore the default user.'
+                        SizeGB          = [math]::Round($mb / 1024, 2)
+                        SuggestedTarget = $suggested
+                        Reason          = $reason
                     })
                 }
             }
@@ -170,14 +168,15 @@ function Get-MigrationCandidates {
     foreach ($d in $Scan.Drives) {
         if ($d.Id -ne $env:SystemDrive) { continue }
         foreach ($f in $d.TopFolders) {
-            if ($f.Name -match '^(Steam|SteamLibrary|Epic Games|GOG Games|Games|XboxGames)$' -and $f.SizeGB -ge $minGB -and $f.SizeGB -le $targetFreeGB) {
+            if ($f.Name -match '^(Steam|SteamLibrary|Epic Games|GOG Games|Games|XboxGames)$' -and $f.SizeGB -ge $minGB) {
+                $suggested = if ($targetRoot) { "$targetRoot\Games" } else { '' }
+                $reason = if ($targetRoot) { 'Game libraries can be moved through the launcher or via move + junction.' } else { "Reinstall inactive games only when needed; keep active games on the system drive.$singleDriveNote" }
                 $rows.Add([pscustomobject]@{
                     Name            = $f.Name
                     Path            = "$($d.Id)\$($f.Name)"
                     SizeGB          = $f.SizeGB
-                    SuggestedTarget = "$targetRoot\Games"
-                    TargetFreeGB    = [math]::Round($targetFreeGB, 2)
-                    Reason          = 'Game libraries can be moved through the launcher or via move + junction.'
+                    SuggestedTarget = $suggested
+                    Reason          = $reason
                 })
             }
         }
@@ -232,23 +231,15 @@ function Get-Recommendations {
         $out.Add(("Cleanable cache/leftovers: {0:N1} GB. Review the junk table and run clean with -Execute." -f $junkTotal))
     }
 
-    $singleDrive = @($Scan.Drives | Where-Object { $_.Id }).Count -le 1
-    if ($singleDrive) {
-        $out.Add('Single-drive machine: no cross-drive migration. Keep media in %USERPROFILE%\Videos and Pictures; use cleanup, archive, or external storage for cold data.')
-    }
-
     foreach ($m in @($Migration)) {
         if ($m.SizeGB -ge 5) {
-            $out.Add(("Migration candidate: {0} ({1:N1} GB) -> {2}" -f $m.Path, $m.SizeGB, $m.SuggestedTarget))
+            $target = if ($m.SuggestedTarget) { $m.SuggestedTarget } else { 'external/compact (single drive)' }
+            $out.Add(("Migration candidate: {0} ({1:N1} GB) -> {2}" -f $m.Path, $m.SizeGB, $target))
         }
     }
 
     if ($Media.PhotoGB + $Media.VideoGB -ge 50) {
-        if ($singleDrive) {
-            $out.Add(("Media library: {0:N1} GB photos + {1:N1} GB video. Organize into %USERPROFILE%\Pictures and Videos by YYYY/YYYY-MM; do not target a nonexistent second drive." -f $Media.PhotoGB, $Media.VideoGB))
-        } else {
-            $out.Add(("Media library: {0:N1} GB photos + {1:N1} GB video. Use the photo-organizer skill for YYYY/YYYY-MM naming." -f $Media.PhotoGB, $Media.VideoGB))
-        }
+        $out.Add(("Media library: {0:N1} GB photos + {1:N1} GB video. Use the photo-organizer skill for YYYY/YYYY-MM naming." -f $Media.PhotoGB, $Media.VideoGB))
     }
 
     foreach ($d in $Scan.Drives) {

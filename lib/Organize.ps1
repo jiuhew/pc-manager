@@ -105,9 +105,9 @@ function Invoke-OrganizeMedia {
 
     $dstRoot = [System.IO.Path]::GetFullPath($Destination).TrimEnd('\')
     if ($dstRoot -match '^[A-Za-z]:\\?$') { throw 'Refusing to write directly to a drive root.' }
-    if ($dstRoot.Equals($src, [System.StringComparison]::OrdinalIgnoreCase) -or
-        $dstRoot.StartsWith($src + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw 'Destination cannot be the source itself or inside the source.'
+    $inPlace = $dstRoot.Equals($src, [System.StringComparison]::OrdinalIgnoreCase)
+    if (-not $inPlace -and $dstRoot.StartsWith($src + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Destination cannot be inside the source.'
     }
 
     $dateFromName = {
@@ -163,6 +163,7 @@ function Invoke-OrganizeMedia {
     $moved = 0
     $planned = 0
     $failed = 0
+    $skipped = 0
     $totalMB = 0.0
     $emitted = 0
     $processed = 0
@@ -195,7 +196,11 @@ function Invoke-OrganizeMedia {
         $year = $date.ToString('yyyy')
         $targetDir = Join-Path (Join-Path $dstRoot $year) $month
         $target = Join-Path $targetDir $fi.Name
-        if (Test-Path -LiteralPath $target) {
+        $samePath = [System.IO.Path]::GetFullPath($target).Equals(
+            [System.IO.Path]::GetFullPath($fi.FullName),
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
+        if (-not $samePath -and (Test-Path -LiteralPath $target)) {
             $base = [System.IO.Path]::GetFileNameWithoutExtension($fi.Name)
             $ext = $fi.Extension
             $counter = 1
@@ -203,11 +208,18 @@ function Invoke-OrganizeMedia {
                 $target = Join-Path $targetDir ('{0}_{1}{2}' -f $base, $counter, $ext)
                 $counter++
             } while (Test-Path -LiteralPath $target)
+            $samePath = [System.IO.Path]::GetFullPath($target).Equals(
+                [System.IO.Path]::GetFullPath($fi.FullName),
+                [System.StringComparison]::OrdinalIgnoreCase
+            )
         }
 
         $status = 'would-move'
         $errorText = ''
-        if ($Execute) {
+        if ($samePath) {
+            $status = 'already-organized'
+            $skipped++
+        } elseif ($Execute) {
             try {
                 New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
                 Move-Item -LiteralPath $fi.FullName -Destination $target -ErrorAction Stop
@@ -262,6 +274,8 @@ function Invoke-OrganizeMedia {
         Planned      = $planned
         Moved        = $moved
         Failed       = $failed
+        Skipped      = $skipped
+        InPlace      = $inPlace
         TotalMB      = [math]::Round($totalMB, 1)
         ManifestPath = $manifestPath
         Items        = @($results | Select-Object -First 200)
