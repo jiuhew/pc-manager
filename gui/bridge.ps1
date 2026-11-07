@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('measure', 'clean', 'organize-media', 'migrate', 'uninstall', 'audit')]
+    [ValidateSet('measure', 'clean', 'organize-media', 'migrate', 'uninstall', 'uninstall-batch', 'audit')]
     [string]$Action,
 
     [Parameter(Mandatory)]
@@ -61,6 +61,37 @@ switch ($Action) {
     }
     'uninstall' {
         $result = Invoke-PcAppUninstall -App $payload.App
+    }
+    'uninstall-batch' {
+        $apps = @($payload.Apps)
+        $items = [System.Collections.Generic.List[object]]::new()
+        $index = 0
+        foreach ($app in $apps) {
+            $index++
+            $item = Invoke-PcAppUninstall -App $app
+            $row = [pscustomobject]@{
+                Index   = $index
+                Name    = [string]$app.DisplayName
+                Path    = [string]$app.InstallLocation
+                SizeMB  = [double]$app.EstimatedMB
+                Status  = [string]$item.Status
+                Detail  = [string]$item.Message
+            }
+            $items.Add($row)
+            & $emitItem $row
+            & $emitProgress @{
+                Current = $index
+                Total   = $apps.Count
+                Label   = "卸载 $($app.DisplayName)"
+                Indeterminate = $false
+            }
+        }
+        $result = [pscustomobject]@{
+            Items = @($items)
+            Completed = @($items | Where-Object Status -eq 'completed').Count
+            Started = @($items | Where-Object Status -eq 'started').Count
+            Failed = @($items | Where-Object Status -eq 'failed').Count
+        }
     }
     'audit' {
         $scanPath = [string]$payload.ScanPath

@@ -70,6 +70,14 @@ Real-world lessons that shaped `pc-manager`.
 - Updated `storage-strategy`, `photo-organizer`, and `app-migration` skills plus `docs/storage-strategy.md`.
 - Version bumped to 0.2.2.
 
+## 2026-11-07 — v0.3.0
+
+- Apps table gained selection checkboxes, select-all, bulk winget updates, and bulk uninstall via each app's own uninstaller.
+- App updates now enforce a timeout, kill the winget process tree, verify the installed version, and support an interactive mode for UAC/setup-wizard installers.
+- Tencent Meeting and QQ pass their `/S` switch through `winget --override` to avoid GUI installers hanging the update job.
+- Removed the top topbar, moved clean filters into table headers, and simplified the Apps panel header.
+- Version bumped to 0.3.0.
+
 ## Tool improvements
 
 - Added cloud placeholder handling (`0x400000`, `0x1000`, `0x100000`).

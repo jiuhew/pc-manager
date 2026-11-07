@@ -5,6 +5,26 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-11-07
+
+### Added
+
+- App table selection checkboxes, select-all, bulk update via winget, and bulk uninstall via each app's own uninstaller. Batch actions live above the list; per-row uninstall buttons were removed.
+- Interactive update mode for apps that need UAC or a setup wizard, for example QQ and Tencent Meeting.
+- `/api/apps/update` and `/api/apps/uninstall-batch` endpoints, both requiring explicit confirmation.
+
+### Fixed
+
+- App updates enforce a timeout, kill the whole winget process tree, verify the installed version after each attempt, and report a clear failure reason instead of hanging silently.
+- Tencent Meeting and QQ pass their `/S` silent switch through `winget --override`, because their manifests do not declare silent switches and otherwise open a GUI installer that can hang the update job.
+
+### Changed
+
+- Removed the top topbar. The active scan picker, refresh, and new scan actions now live in the Clean tab's scan history bar.
+- Clean filters moved from the panel header into table header controls: search, category, safety level, and sort dropdowns.
+- Apps panel header simplified: the redundant subtitle is gone and the title, filters, search, and refresh action now share one row.
+- Version bumped to 0.3.0.
+
 ## [0.2.2] - 2026-11-07
 
 ### Changed
@@ -130,7 +150,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Duplicate `%TEMP%` and `%LOCALAPPDATA%\Temp` entries are deduplicated.
 - Photo organizer skips already-organized `YYYY` and `YYYY-MM_*` directories.
 
-[Unreleased]: https://github.com/jiuhew/pc-manager/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/jiuhew/pc-manager/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/jiuhew/pc-manager/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/jiuhew/pc-manager/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/jiuhew/pc-manager/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/jiuhew/pc-manager/compare/v0.1.2...v0.2.0

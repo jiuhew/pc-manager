@@ -104,6 +104,22 @@ test('AI and uninstall endpoints require confirmation and guard paths', async ()
     assert.equal(uninstall.status, 400);
     assert.match((await uninstall.json()).error, /confirmation/i);
 
+    const updateBatch = await fetch(`${base}/api/apps/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scan: SCAN_ID, indexes: [0] })
+    });
+    assert.equal(updateBatch.status, 400);
+    assert.match((await updateBatch.json()).error, /confirmation/i);
+
+    const uninstallBatch = await fetch(`${base}/api/apps/uninstall-batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scan: SCAN_ID, indexes: [0] })
+    });
+    assert.equal(uninstallBatch.status, 400);
+    assert.match((await uninstallBatch.json()).error, /confirmation/i);
+
     const protectedMedia = await fetch(`${base}/api/ai/preview`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

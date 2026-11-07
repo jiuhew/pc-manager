@@ -19,11 +19,47 @@ function errorWithOutput(message, stdout, stderr, exitCode) {
  * Run a child process, split stdout/stderr into lines, and reject on a
  * non-zero exit code. Supports AbortSignal cancellation.
  */
+export function killProcessTree(pid) {
+  if (!pid) return;
+  if (process.platform === 'win32') {
+    try {
+      spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+    } catch {
+      // Best effort only.
+    }
+    return;
+  }
+  try {
+    process.kill(pid, 'SIGKILL');
+  } catch {
+    // Best effort only.
+  }
+}
+
 export function runProcess(command, args, options = {}) {
-  const { cwd, onLine, signal, env } = options;
+  const { cwd, onLine, signal, env, timeoutMs } = options;
 
   return new Promise((resolve, reject) => {
     let child;
+    let timer = null;
+    let settled = false;
+    let timedOut = false;
+
+    const finish = (handler, value) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      handler(value);
+    };
+
+    const terminate = () => {
+      if (!child) return;
+      if (process.platform === 'win32') killProcessTree(child.pid);
+      else {
+        try { child.kill('SIGKILL'); } catch { /* ignore */ }
+      }
+    };
+
     try {
       child = spawn(command, args, {
         cwd,
@@ -40,6 +76,14 @@ export function runProcess(command, args, options = {}) {
     let stderr = '';
     let outBuffer = '';
     let errBuffer = '';
+
+    if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+      timer = setTimeout(() => {
+        timedOut = true;
+        terminate();
+      }, timeoutMs);
+      timer.unref?.();
+    }
 
     const emitLine = (line, stream) => {
       if (!onLine) return;
@@ -78,27 +122,37 @@ export function runProcess(command, args, options = {}) {
     });
 
     child.on('error', (error) => {
-      if (error.name === 'AbortError') {
-        reject(errorWithOutput('Cancelled', stdout, stderr, null));
+      terminate();
+      if (error.name === 'AbortError' || signal?.aborted) {
+        finish(reject, errorWithOutput('Cancelled', stdout, stderr, null));
         return;
       }
-      reject(errorWithOutput(`Failed to start ${command}: ${error.message}`, stdout, stderr, null));
+      finish(reject, errorWithOutput(`Failed to start ${command}: ${error.message}`, stdout, stderr, null));
     });
 
     child.on('close', (code) => {
       if (outBuffer) emitLine(outBuffer, 'stdout');
       if (errBuffer) emitLine(errBuffer, 'stderr');
 
+      if (timedOut) {
+        finish(reject, errorWithOutput(
+          `Process timed out after ${Math.round(timeoutMs / 1000)}s`,
+          stdout,
+          stderr,
+          'timeout'
+        ));
+        return;
+      }
       if (signal?.aborted) {
-        reject(errorWithOutput('Cancelled', stdout, stderr, code));
+        finish(reject, errorWithOutput('Cancelled', stdout, stderr, code));
         return;
       }
       if (code === 0) {
-        resolve({ code, stdout, stderr });
+        finish(resolve, { code, stdout, stderr });
         return;
       }
       const tail = stderr.trim().split(/\r?\n/).slice(-6).join('\n');
-      reject(errorWithOutput(
+      finish(reject, errorWithOutput(
         tail || `Process exited with code ${code}`,
         stdout,
         stderr,

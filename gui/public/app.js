@@ -13,6 +13,7 @@ const state = {
   appQuery: '',
   appLimit: 60,
   appFilter: 'all',
+  appSelection: new Set(),
   appInsights: null,
   appInsightsScanId: null,
   appInsightsLoading: false,
@@ -64,7 +65,11 @@ const STATUS_LABELS = {
   failed: '失败',
   'would-move': '待移动',
   moved: '已移动',
-  planned: '待移动'
+  planned: '待移动',
+  updated: '已更新',
+  'up-to-date': '已是最新',
+  started: '已启动',
+  completed: '已完成'
 };
 
 const AI_CATEGORY_ORDER = ['media', 'engineering', 'cache'];
@@ -336,6 +341,7 @@ async function loadScan(id) {
     state.appInsights = null;
     state.appInsightsScanId = null;
     state.appFilter = 'all';
+    state.appSelection.clear();
     state.activeTab = 'overview';
     renderScanPicker();
     $('emptyState').classList.add('hidden');
@@ -706,18 +712,8 @@ function renderTabs() {
     </button>
   `).join('');
 
-  const active = tabs.find((tab) => tab.id === state.activeTab) || tabs[0];
-  $('pageTitle').textContent = active.label;
-  if (state.activeTab === 'overview') {
-    const system = state.system;
-    $('pageSub').textContent = system
-      ? `${system.hostname} · ${system.cpu?.name || 'CPU'} · ${fmtGB(system.memory?.totalGB)} GB RAM`
-      : '系统概览加载中…';
-  } else {
-    $('pageSub').textContent = scan
-      ? `${state.scanId} · ${scan.Drives.map((drive) => drive.Id).join(' ') || '—'} · ${fmtGB(sumBy(scan.Junk, junkGB))} GB 可清理`
-      : '暂无扫描结果';
-  }
+  const historyBar = $('scanHistoryBar');
+  if (historyBar) historyBar.classList.toggle('hidden', state.activeTab !== 'clean');
 }
 
 /* ------------------------------------------------------------------ */
@@ -774,23 +770,6 @@ function renderClean() {
           </div>
         </div>
         <div class="panel-tools">
-          <div class="toolbar">
-            <input id="cleanSearch" class="search-input" type="search" placeholder="搜索名称 / 路径 / 说明" value="${esc(state.filters.query)}">
-            <select id="cleanSafety" aria-label="安全等级">
-              <option value="all"${state.filters.safety === 'all' ? ' selected' : ''}>全部等级</option>
-              ${Object.entries(SAFETY_LABELS).map(([value, label]) => `<option value="${value}"${state.filters.safety === value ? ' selected' : ''}>${label}</option>`).join('')}
-            </select>
-            <select id="cleanCategory" aria-label="分类">
-              <option value="all"${state.filters.category === 'all' ? ' selected' : ''}>全部分类</option>
-              ${categories.map((value) => `<option value="${esc(value)}"${state.filters.category === value ? ' selected' : ''}>${esc(CATEGORY_LABELS[value] || value)}</option>`).join('')}
-            </select>
-            <select id="cleanSort" aria-label="排序">
-              <option value="size"${state.filters.sort === 'size' ? ' selected' : ''}>大小从大到小</option>
-              <option value="size-asc"${state.filters.sort === 'size-asc' ? ' selected' : ''}>大小从小到大</option>
-              <option value="name"${state.filters.sort === 'name' ? ' selected' : ''}>名称</option>
-              <option value="category"${state.filters.sort === 'category' ? ' selected' : ''}>分类</option>
-            </select>
-          </div>
           <button class="btn ghost small" data-action="select-safe">全选安全项</button>
           <button class="btn ghost small" data-action="clear-selection">清空</button>
         </div>
@@ -800,10 +779,29 @@ function renderClean() {
           <thead>
             <tr>
               <th class="checkbox-cell"></th>
-              <th>项目</th>
-              <th>分类</th>
-              <th>安全等级</th>
-              <th class="num">大小</th>
+              <th class="th-filter th-filter-search">
+                <input id="cleanSearch" class="th-input" type="search" placeholder="筛选项目 / 路径" value="${esc(state.filters.query)}" aria-label="筛选项目或路径">
+              </th>
+              <th class="th-filter">
+                <select id="cleanCategory" class="th-select" aria-label="按分类筛选" title="按分类筛选">
+                  <option value="all"${state.filters.category === 'all' ? ' selected' : ''}>分类</option>
+                  ${categories.map((value) => `<option value="${esc(value)}"${state.filters.category === value ? ' selected' : ''}>${esc(CATEGORY_LABELS[value] || value)}</option>`).join('')}
+                </select>
+              </th>
+              <th class="th-filter">
+                <select id="cleanSafety" class="th-select" aria-label="按安全等级筛选" title="按安全等级筛选">
+                  <option value="all"${state.filters.safety === 'all' ? ' selected' : ''}>等级</option>
+                  ${Object.entries(SAFETY_LABELS).map(([value, label]) => `<option value="${value}"${state.filters.safety === value ? ' selected' : ''}>${label}</option>`).join('')}
+                </select>
+              </th>
+              <th class="th-filter num">
+                <select id="cleanSort" class="th-select" aria-label="排序方式" title="排序方式">
+                  <option value="size"${state.filters.sort === 'size' ? ' selected' : ''}>大小 ↓</option>
+                  <option value="size-asc"${state.filters.sort === 'size-asc' ? ' selected' : ''}>大小 ↑</option>
+                  <option value="name"${state.filters.sort === 'name' ? ' selected' : ''}>名称</option>
+                  <option value="category"${state.filters.sort === 'category' ? ' selected' : ''}>分类</option>
+                </select>
+              </th>
               <th>说明</th>
             </tr>
           </thead>
@@ -966,6 +964,41 @@ function formatLastUsed(insight) {
   return `${insight.lastUsedDays} 天前`;
 }
 
+function updateAppsSelectionUi() {
+  const insights = state.appInsightsScanId === state.scanId ? state.appInsights : null;
+  const insightByIndex = new Map((insights?.apps || []).map((entry) => [entry.index, entry]));
+  const selected = [...state.appSelection].filter((index) => state.scan?.InstalledApps?.[index]);
+  const selectedGB = sumBy(selected, (index) => num(state.scan.InstalledApps[index]?.EstimatedMB) / 1024);
+  const selectedUpdates = selected.filter((index) => insightByIndex.get(index)?.update).length;
+  const selectedUninstallable = selected.filter((index) => state.scan.InstalledApps[index]?.UninstallString).length;
+
+  const info = document.getElementById('appsBulkInfo');
+  if (info) info.textContent = `已选 ${fmtCount(selected.length)} 个 · ${fmtGB(selectedGB)} GB`;
+
+  const updateButton = document.querySelector('[data-action="update-selected-apps"]');
+  if (updateButton) {
+    updateButton.classList.toggle('is-disabled', selectedUpdates === 0);
+    updateButton.setAttribute('aria-disabled', String(selectedUpdates === 0));
+    updateButton.title = selectedUpdates > 0 ? `更新所选 ${selectedUpdates} 个应用` : '先勾选有可用更新的应用';
+    updateButton.innerHTML = `${icon('refresh', 14)} 更新所选${selectedUpdates > 0 ? ` (${fmtCount(selectedUpdates)})` : ''}`;
+  }
+  const uninstallButton = document.querySelector('[data-action="uninstall-selected-apps"]');
+  if (uninstallButton) {
+    uninstallButton.classList.toggle('is-disabled', selectedUninstallable === 0);
+    uninstallButton.setAttribute('aria-disabled', String(selectedUninstallable === 0));
+    uninstallButton.title = selectedUninstallable > 0 ? `卸载所选 ${selectedUninstallable} 个应用` : '先勾选要卸载的应用';
+    uninstallButton.innerHTML = `${icon('delete', 14)} 卸载所选${selectedUninstallable > 0 ? ` (${fmtCount(selectedUninstallable)})` : ''}`;
+  }
+
+  const boxes = [...document.querySelectorAll('input[data-app-idx]')];
+  const checkedCount = boxes.filter((box) => box.checked).length;
+  const selectAll = document.getElementById('appsSelectAll');
+  if (selectAll) {
+    selectAll.checked = boxes.length > 0 && checkedCount === boxes.length;
+    selectAll.indeterminate = checkedCount > 0 && checkedCount < boxes.length;
+  }
+}
+
 function renderApps() {
   const insights = state.appInsightsScanId === state.scanId ? state.appInsights : null;
   const insightByIndex = new Map((insights?.apps || []).map((entry) => [entry.index, entry]));
@@ -986,6 +1019,11 @@ function renderApps() {
   }
   rows.sort((a, b) => num(b.app.EstimatedMB) - num(a.app.EstimatedMB));
   const visible = rows.slice(0, state.appLimit);
+  const selected = [...state.appSelection].filter((index) => state.scan.InstalledApps[index]);
+  const selectedGB = sumBy(selected, (index) => num(state.scan.InstalledApps[index]?.EstimatedMB) / 1024);
+  const selectedUpdates = selected.filter((index) => insightByIndex.get(index)?.update).length;
+  const selectedUninstallable = selected.filter((index) => state.scan.InstalledApps[index]?.UninstallString).length;
+  const allVisibleSelected = visible.length > 0 && visible.every(({ index }) => state.appSelection.has(index));
   const updates = insights?.updatesAvailable ?? null;
   const suggested = insights?.suggestedUninstall ?? null;
   const known = insights?.lastUsedKnown ?? null;
@@ -1022,14 +1060,9 @@ function renderApps() {
     </div>
 
     <div class="panel">
-      <div class="panel-head">
-        <div>
-          <div class="panel-title">软件概况</div>
-          <div class="panel-sub">
-            ${loading ? '正在通过 winget 检查更新，可能需要几秒…' : insights?.wingetError ? `winget 检查失败：${esc(insights.wingetError)}` : '自动检查更新 · 上次使用时间来自 Prefetch/UserAssist 估算'}
-          </div>
-        </div>
-        <div class="panel-tools">
+      <div class="panel-head apps-head">
+        <div class="panel-title">软件概况</div>
+        <div class="panel-tools apps-tools">
           <div class="filter-row">
             ${filterChips.map(([value, label, count]) => `
               <button class="filter-chip${state.appFilter === value ? ' active' : ''}" data-action="app-filter" data-filter="${value}">
@@ -1042,10 +1075,25 @@ function renderApps() {
         </div>
       </div>
 
+      <div class="apps-bulk-bar">
+        <div id="appsBulkInfo" class="apps-bulk-info">已选 ${fmtCount(selected.length)} 个 · ${fmtGB(selectedGB)} GB</div>
+        <div class="apps-bulk-actions">
+          <button class="btn primary small${selectedUpdates > 0 ? '' : ' is-disabled'}" data-action="update-selected-apps" aria-disabled="${selectedUpdates === 0}" title="${selectedUpdates > 0 ? `更新所选 ${selectedUpdates} 个应用` : '先勾选有可用更新的应用'}">
+            ${icon('refresh', 14)} 更新所选${selectedUpdates > 0 ? ` (${fmtCount(selectedUpdates)})` : ''}
+          </button>
+          <button class="btn danger small${selectedUninstallable > 0 ? '' : ' is-disabled'}" data-action="uninstall-selected-apps" aria-disabled="${selectedUninstallable === 0}" title="${selectedUninstallable > 0 ? `卸载所选 ${selectedUninstallable} 个应用` : '先勾选要卸载的应用'}">
+            ${icon('delete', 14)} 卸载所选${selectedUninstallable > 0 ? ` (${fmtCount(selectedUninstallable)})` : ''}
+          </button>
+        </div>
+      </div>
+
       <div class="table-wrap list-scroll">
         <table class="apps-table">
           <thead>
-            <tr><th>应用</th><th>版本</th><th>发行商</th><th class="num">大小</th><th>上次使用</th><th>更新</th><th></th></tr>
+            <tr>
+              <th class="checkbox-cell"><input id="appsSelectAll" type="checkbox" ${allVisibleSelected ? 'checked' : ''} ${visible.length === 0 ? 'disabled' : ''} aria-label="全选当前列表"></th>
+              <th>应用</th><th>版本</th><th>发行商</th><th class="num">大小</th><th>上次使用</th><th>更新</th>
+            </tr>
           </thead>
           <tbody>
             ${visible.length === 0 ? `<tr><td colspan="7" class="empty-row">${insights ? '没有匹配的应用' : '正在加载应用概况…'}</td></tr>` : visible.map(({ app, index, insight }) => {
@@ -1055,7 +1103,10 @@ function renderApps() {
                 ? `<span class="badge medium app-suggest-badge" title="${esc(insight.uninstallReason)}">建议卸载</span>`
                 : '';
               return `
-                <tr>
+                <tr class="${state.appSelection.has(index) ? 'selected' : ''}">
+                  <td class="checkbox-cell">
+                    <input type="checkbox" data-app-idx="${index}" ${state.appSelection.has(index) ? 'checked' : ''} aria-label="选择 ${esc(app.DisplayName)}">
+                  </td>
                   <td>
                     <div class="app-name-line">
                       <span class="cell-name">${esc(app.DisplayName)}</span>
@@ -1073,11 +1124,6 @@ function renderApps() {
                     ${update
                       ? `<span class="badge medium app-update-badge" title="当前 ${esc(update.version)} → ${esc(update.available)}">${esc(update.available)}</span>`
                       : `<span class="dim">${insights ? '—' : '…'}</span>`}
-                  </td>
-                  <td class="num">
-                    <button class="icon-btn danger-icon" data-action="uninstall-app" data-index="${index}" title="${app.UninstallString ? `卸载 ${esc(app.DisplayName)}` : '没有可用的卸载命令'}" aria-label="卸载 ${esc(app.DisplayName)}" ${app.UninstallString ? '' : 'disabled'}>
-                      ${icon('delete', 16)}
-                    </button>
                   </td>
                 </tr>
               `;
@@ -1113,6 +1159,182 @@ function renderApps() {
       </details>
     ` : ''}
   `;
+}
+
+/* ------------------------------------------------------------------ */
+/* apps bulk actions                                                   */
+/* ------------------------------------------------------------------ */
+
+function selectedAppIndexes() {
+  return [...state.appSelection].filter((index) => state.scan?.InstalledApps?.[index]);
+}
+
+function showUpdateSelectedModal() {
+  const insights = state.appInsightsScanId === state.scanId ? state.appInsights : null;
+  const insightByIndex = new Map((insights?.apps || []).map((entry) => [entry.index, entry]));
+  const selected = selectedAppIndexes().filter((index) => insightByIndex.get(index)?.update);
+  if (selected.length === 0) {
+    toast(selectedAppIndexes().length === 0 ? '请先勾选要更新的应用' : '所选应用没有可用更新', 'info');
+    return;
+  }
+
+  const body = `
+    <div class="note">将使用 winget 依次更新以下应用。默认静默更新；如果应用需要 UAC 或安装向导，请勾选下方的“交互模式”。</div>
+    <div class="summary-box" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+      <div class="summary-cell"><div class="k">更新应用</div><div class="v">${fmtCount(selected.length)} 个</div></div>
+      <div class="summary-cell"><div class="k">数据来源</div><div class="v" style="font-size:12px">winget upgrade</div></div>
+    </div>
+    <div class="list-scroll">
+      <table>
+        <thead><tr><th>应用</th><th>当前</th><th>可用</th></tr></thead>
+        <tbody>
+          ${selected.map((index) => {
+            const app = state.scan.InstalledApps[index];
+            const update = insightByIndex.get(index).update;
+            return `<tr>
+              <td class="cell-name">${esc(app.DisplayName)}</td>
+              <td>${esc(update.version || app.DisplayVersion || '—')}</td>
+              <td><span class="badge medium">${esc(update.available)}</span></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    <label class="checkbox-row" style="margin-top:14px">
+      <input type="checkbox" id="appsUpdateInteractive">
+      <span>交互模式：显示安装向导 / 允许 UAC（适合 QQ 等需要确认的应用）。</span>
+    </label>
+    <label class="checkbox-row" style="margin-top:10px">
+      <input type="checkbox" id="appsUpdateConfirm">
+      <span>我确认更新以上 ${fmtCount(selected.length)} 个应用（勾选后“开始更新”才可用）。</span>
+    </label>
+  `;
+
+  showModal({
+    title: '更新所选应用',
+    subtitle: 'winget 更新，失败项会保留并说明原因',
+    body,
+    actions: [
+      { label: '取消', kind: 'ghost' },
+      {
+        label: '开始更新',
+        kind: 'primary',
+        disabled: true,
+        onClick: async ({ close }) => {
+          const interactive = Boolean(document.getElementById('appsUpdateInteractive')?.checked);
+          close();
+          try {
+            toast(interactive ? '正在启动交互式更新，请留意安装窗口…' : '正在准备更新任务…', 'info', 3000);
+            const { jobId } = await api('/api/apps/update', {
+              method: 'POST',
+              body: { scan: state.scanId, indexes: selected, confirm: true, interactive }
+            });
+            openJob(jobId, {
+              title: `${interactive ? '交互更新' : '更新'} ${selected.length} 个应用`,
+              onDone: async (job) => {
+                if (job.status !== 'done') {
+                  toast(job.error || '更新任务失败', 'error', 8000);
+                  return;
+                }
+                const result = job.result || {};
+                const needsInteractive = Array.isArray(result.NeedsInteractive) ? result.NeedsInteractive : [];
+                const summary = `更新完成：成功 ${fmtCount(result.Updated || 0)}，已是最新 ${fmtCount(result.UpToDate || 0)}，失败 ${fmtCount(result.Failed || 0)}`;
+                if (needsInteractive.length > 0) {
+                  toast(`${summary}。${needsInteractive.join('、')} 需要交互式安装，请重新勾选并启用“交互模式”。`, 'warn', 14000);
+                } else {
+                  toast(summary, result.Failed > 0 ? 'warn' : 'ok', 9000);
+                }
+                state.appSelection.clear();
+                await loadAppInsights({ force: true });
+              }
+            });
+          } catch (error) {
+            toast(error.message, 'error');
+          }
+        }
+      }
+    ],
+    onMount: ({ backdrop }) => {
+      const check = backdrop.querySelector('#appsUpdateConfirm');
+      const start = backdrop.querySelector('[data-action-index="1"]');
+      check.addEventListener('change', () => { start.disabled = !check.checked; });
+    }
+  });
+}
+
+function showUninstallSelectedModal() {
+  const selected = selectedAppIndexes().filter((index) => state.scan.InstalledApps[index]?.UninstallString);
+  if (selected.length === 0) {
+    toast(selectedAppIndexes().length === 0 ? '请先勾选要卸载的应用' : '所选应用没有可用的卸载命令', 'info');
+    return;
+  }
+
+  const body = `
+    <div class="note warn">将依次调用所选应用自带的卸载程序。可能弹出多个卸载向导，请按提示完成；不会直接删除安装目录。</div>
+    <div class="list-scroll" style="margin-top:12px">
+      <table>
+        <thead><tr><th>应用</th><th class="num">大小</th><th>版本</th></tr></thead>
+        <tbody>
+          ${selected.map((index) => {
+            const app = state.scan.InstalledApps[index];
+            return `<tr>
+              <td class="cell-name">${esc(app.DisplayName)}</td>
+              <td class="num">${fmtMB(app.EstimatedMB)}</td>
+              <td>${esc(app.DisplayVersion || '—')}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    <label class="checkbox-row" style="margin-top:14px">
+      <input type="checkbox" id="appsUninstallConfirm">
+      <span>我确认卸载以上 ${fmtCount(selected.length)} 个应用，并理解卸载向导可能需要手动完成（勾选后“开始卸载”才可用）。</span>
+    </label>
+  `;
+
+  showModal({
+    title: '卸载所选应用',
+    subtitle: '调用应用自带卸载程序',
+    body,
+    actions: [
+      { label: '取消', kind: 'ghost' },
+      {
+        label: '开始卸载',
+        kind: 'danger',
+        disabled: true,
+        onClick: async ({ close }) => {
+          close();
+          try {
+            toast('正在启动应用卸载程序…', 'info', 2500);
+            const { jobId } = await api('/api/apps/uninstall-batch', {
+              method: 'POST',
+              body: { scan: state.scanId, indexes: selected, confirm: true }
+            });
+            openJob(jobId, {
+              title: `卸载 ${selected.length} 个应用`,
+              onDone: async (job) => {
+                if (job.status !== 'done') {
+                  toast(job.error || '卸载任务失败', 'error', 8000);
+                  return;
+                }
+                const result = job.result || {};
+                toast(`卸载任务结束：完成 ${fmtCount(result.Completed || 0)}，已启动 ${fmtCount(result.Started || 0)}，失败 ${fmtCount(result.Failed || 0)}`, 'ok', 9000);
+                state.appSelection.clear();
+                await loadAppInsights({ force: true });
+              }
+            });
+          } catch (error) {
+            toast(error.message, 'error');
+          }
+        }
+      }
+    ],
+    onMount: ({ backdrop }) => {
+      const check = backdrop.querySelector('#appsUninstallConfirm');
+      const start = backdrop.querySelector('[data-action-index="1"]');
+      check.addEventListener('change', () => { start.disabled = !check.checked; });
+    }
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -1819,6 +2041,7 @@ function renderView() {
       break;
   }
   updateActionBar();
+  if (state.activeTab === 'apps') updateAppsSelectionUi();
 }
 
 function renderViewKeepingFocus(inputId) {
@@ -1853,6 +2076,7 @@ function updateActionBar() {
 function renderEmptyState(message) {
   $('tabs').innerHTML = '';
   $('view').innerHTML = '';
+  $('scanHistoryBar')?.classList.add('hidden');
   $('actionbar').classList.add('hidden');
   const host = $('emptyState');
   host.classList.remove('hidden');
@@ -1996,6 +2220,10 @@ function wireEvents() {
       const planId = action.dataset.planId;
       delete state.aiPrompts[planId];
       renderView();
+    } else if (name === 'update-selected-apps') {
+      showUpdateSelectedModal();
+    } else if (name === 'uninstall-selected-apps') {
+      showUninstallSelectedModal();
     } else if (name === 'uninstall-app') {
       const index = Number(action.dataset.index);
       const app = state.scan?.InstalledApps?.[index];
@@ -2005,6 +2233,28 @@ function wireEvents() {
 
   $('view').addEventListener('change', (event) => {
     const target = event.target;
+    if (target.id === 'appsSelectAll') {
+      const checked = target.checked;
+      document.querySelectorAll('input[data-app-idx]').forEach((box) => {
+        box.checked = checked;
+        const index = Number(box.dataset.appIdx);
+        if (checked) state.appSelection.add(index);
+        else state.appSelection.delete(index);
+        const row = box.closest('tr');
+        if (row) row.classList.toggle('selected', checked);
+      });
+      updateAppsSelectionUi();
+      return;
+    }
+    if (target.matches('input[data-app-idx]')) {
+      const index = Number(target.dataset.appIdx);
+      if (target.checked) state.appSelection.add(index);
+      else state.appSelection.delete(index);
+      const row = target.closest('tr');
+      if (row) row.classList.toggle('selected', target.checked);
+      updateAppsSelectionUi();
+      return;
+    }
     if (target.matches('input[type="checkbox"][data-idx]')) {
       const index = Number(target.dataset.idx);
       if (target.checked) state.selection.add(index);

@@ -22,12 +22,21 @@ import { listDrives } from './lib/drives.mjs';
 import { ApiError } from './lib/errors.mjs';
 import { JobManager } from './lib/jobs.mjs';
 import { folderHasMedia } from './lib/media-check.mjs';
-import { detectAdmin, runPowerShellFile } from './lib/ps.mjs';
+import { detectAdmin, runProcess, runPowerShellFile } from './lib/ps.mjs';
 import { hasRiskyItems, isProtectedPath, normalizePath, resolveCandidates } from './lib/safety.mjs';
 import { assertScanId, getScan, listScans } from './lib/scans.mjs';
 import { getSystemInfo } from './lib/system.mjs';
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
+const UPDATE_TIMEOUT_MS = Number(process.env.PC_MANAGER_UPDATE_TIMEOUT_MS) || 10 * 60 * 1000;
+const UPDATE_INTERACTIVE_TIMEOUT_MS = Number(process.env.PC_MANAGER_UPDATE_INTERACTIVE_TIMEOUT_MS) || 30 * 60 * 1000;
+const WINGET_SUCCESS_RE = /successfully installed|successfully upgraded|已成功安装|已成功升级|安装成功|升级成功/i;
+const WINGET_NO_UPDATE_RE = /no applicable update|no available upgrade|没有可用的更新|没有可用的升级|已是最新/i;
+const WINGET_ELEVATION_RE = /请求以管理员身份运行|管理员身份|elevation|elevate|期待提示|waiting for/i;
+const SILENT_OVERRIDES = new Map([
+  ['Tencent.TencentMeeting', '/S'],
+  ['Tencent.QQ.NT', '/S']
+]);
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -439,6 +448,201 @@ export function createApp(options = {}) {
     });
   }
 
+  function compareVersions(left, right) {
+    const parse = (value) => String(value || '').split(/[^0-9]+/).filter(Boolean).map(Number);
+    const a = parse(left);
+    const b = parse(right);
+    if (a.length === 0 || b.length === 0) return null;
+    const length = Math.max(a.length, b.length);
+    for (let i = 0; i < length; i++) {
+      const x = a[i] || 0;
+      const y = b[i] || 0;
+      if (x > y) return 1;
+      if (x < y) return -1;
+    }
+    return 0;
+  }
+
+  async function getInstalledWingetVersion(id, signal) {
+    const result = await runProcess(
+      'winget',
+      ['list', '--id', id, '--exact', '--accept-source-agreements', '--disable-interactivity'],
+      { timeoutMs: 90 * 1000, signal }
+    ).catch((error) => error);
+    const text = `${result.stdout || ''}\n${result.stderr || ''}`;
+    for (const line of text.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || /^-+$/.test(trimmed)) continue;
+      if (!trimmed.toLowerCase().includes(String(id).toLowerCase())) continue;
+      const parts = trimmed.split(/\s{2,}/);
+      const at = parts.findIndex((part) => part.toLowerCase() === String(id).toLowerCase());
+      if (at >= 0 && parts[at + 1]) return parts[at + 1];
+    }
+    return null;
+  }
+
+  function tailOf(text, lines = 3) {
+    return String(text || '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(-lines)
+      .join(' ');
+  }
+
+  function makeAppUpdateJob(items, options = {}) {
+    const interactive = options.interactive === true;
+    return jobs.create({
+      kind: 'apps-update',
+      title: `${interactive ? '交互更新' : '更新'} ${items.length} 个应用`,
+      run: async (current) => {
+        const results = [];
+        current.setProgress({ current: 0, total: items.length, label: '准备更新' });
+        for (let i = 0; i < items.length; i++) {
+          const { app, update } = items[i];
+          current.setProgress({ current: i, total: items.length, label: `更新 ${app.DisplayName}` });
+          let status = 'updated';
+          let detail = '';
+          let output = '';
+          let timingOut = false;
+          try {
+            const args = ['upgrade', '--id', update.id, '--exact'];
+            if (interactive) {
+              args.push('--interactive');
+            } else {
+              args.push('--silent');
+              const override = SILENT_OVERRIDES.get(update.id);
+              if (override) args.push('--override', override);
+            }
+            args.push('--accept-package-agreements', '--accept-source-agreements');
+            if (!interactive) args.push('--disable-interactivity');
+            if (update.source === 'msstore') args.push('--source', 'msstore');
+            const run = await runProcess('winget', args, {
+              cwd: repoRoot,
+              signal: current.signal,
+              timeoutMs: interactive ? UPDATE_INTERACTIVE_TIMEOUT_MS : UPDATE_TIMEOUT_MS,
+              onLine: (line, stream) => {
+                const text = line.trim();
+                if (!text) return;
+                output += `${text}\n`;
+                current.log(stream, `[${app.DisplayName}] ${text}`);
+              }
+            });
+            output += `${run.stdout || ''}\n${run.stderr || ''}`;
+          } catch (error) {
+            if (current.signal.aborted) throw error;
+            timingOut = error?.exitCode === 'timeout';
+            output += `\n${error?.stdout || ''}\n${error?.stderr || ''}\n${error?.message || ''}`;
+            if (!timingOut) detail = error?.message || String(error);
+          }
+          if (current.signal.aborted) throw new Error('Cancelled');
+
+          const installed = await getInstalledWingetVersion(update.id, current.signal);
+          const movedForward = compareVersions(installed, update.version) === 1;
+          const reachedTarget = compareVersions(installed, update.available);
+          const verified = movedForward && reachedTarget !== -1;
+
+          if (WINGET_SUCCESS_RE.test(output) || verified) {
+            status = 'updated';
+            detail = installed ? `已更新到 ${installed}` : 'winget 报告安装成功';
+          } else if (WINGET_NO_UPDATE_RE.test(output)) {
+            status = 'up-to-date';
+            detail = installed ? `当前版本 ${installed}，没有可用更新` : '没有可用更新';
+          } else {
+            status = 'failed';
+            if (timingOut) {
+              detail = interactive
+                ? '交互更新超时，请确认安装向导是否完成。'
+                : '更新超时，已终止 winget。该应用可能需要 UAC 或安装向导，请用“交互模式”重试。';
+            } else if (WINGET_ELEVATION_RE.test(output)) {
+              detail = '安装程序等待管理员授权或交互确认，请用“交互模式”重试。';
+            } else if (!detail) {
+              detail = installed
+                ? `未能确认更新成功，当前版本 ${installed}`
+                : `未能确认更新成功。${tailOf(output)}`;
+            }
+          }
+
+          current.addItem({
+            Name: app.DisplayName,
+            Path: app.InstallLocation || '',
+            Status: status,
+            SizeMB: 0,
+            Detail: detail
+          });
+          results.push({
+            Index: i + 1,
+            Name: app.DisplayName,
+            Status: status,
+            Detail: detail,
+            NeedsInteractive: status === 'failed' && (timingOut || WINGET_ELEVATION_RE.test(output))
+          });
+          current.setProgress({
+            current: i + 1,
+            total: items.length,
+            label: `${app.DisplayName} ${status === 'updated' ? '完成' : status === 'up-to-date' ? '已是最新' : '失败'}`
+          });
+        }
+        return {
+          Items: results,
+          Updated: results.filter((item) => item.Status === 'updated').length,
+          UpToDate: results.filter((item) => item.Status === 'up-to-date').length,
+          Failed: results.filter((item) => item.Status === 'failed').length,
+          NeedsInteractive: results.filter((item) => item.NeedsInteractive).map((item) => item.Name)
+        };
+      }
+    });
+  }
+
+  function makeUninstallBatchJob(apps) {
+    return jobs.create({
+      kind: 'apps-uninstall',
+      title: `卸载 ${apps.length} 个应用`,
+      run: async (current) => {
+        const input = await writeBridgeInput({ Apps: apps });
+        let result = null;
+        try {
+          current.setProgress({ current: 0, total: apps.length, label: '准备卸载' });
+          const run = await runPowerShellFile(
+            bridgeScript,
+            ['-Action', 'uninstall-batch', '-InputFile', input.file],
+            {
+              cwd: repoRoot,
+              signal: current.signal,
+              onLine: (line, stream) => {
+                if (stream !== 'stdout' || !line.trim().startsWith('{')) {
+                  current.log(stream, line);
+                  return;
+                }
+                try {
+                  const event = JSON.parse(line);
+                  if (event?.type === 'item') current.addItem(event.data);
+                  if (event?.type === 'progress') {
+                    current.setProgress({
+                      current: event.data?.Current,
+                      total: event.data?.Total,
+                      label: event.data?.Label,
+                      indeterminate: event.data?.Indeterminate
+                    });
+                  }
+                  if (event?.type === 'result') result = event.data;
+                } catch {
+                  current.log(stream, line);
+                }
+              }
+            }
+          );
+          if (!result) result = parseBridgeResult(run.stdout);
+          if (!result) throw new Error('批量卸载没有返回结果');
+          current.setProgress({ current: apps.length, total: apps.length, label: '卸载任务完成' });
+          return result;
+        } finally {
+          await input.cleanup();
+        }
+      }
+    });
+  }
+
   function makeUninstallJob(app) {
     return jobs.create({
       kind: 'uninstall',
@@ -606,6 +810,53 @@ export function createApp(options = {}) {
       const scan = await getScan(reportsDir, scanId);
       const insights = await getAppInsights(scan, { force: url.searchParams.get('refresh') === '1' });
       sendJson(response, 200, { scanId, insights });
+      return true;
+    }
+
+    if (request.method === 'POST' && pathname === '/api/apps/update') {
+      checkSameOrigin(request);
+      const body = await readJson(request);
+      if (body.confirm !== true) throw new ApiError(400, 'App updates require explicit confirmation');
+      const scanId = assertScanId(body.scan);
+      const scan = await getScan(reportsDir, scanId);
+      const indexes = Array.isArray(body.indexes)
+        ? [...new Set(body.indexes.map(Number).filter((value) => Number.isInteger(value) && value >= 0))]
+        : [];
+      if (indexes.length === 0) throw new ApiError(400, 'Select at least one app');
+      if (indexes.length > 100) throw new ApiError(400, 'Too many apps in one update');
+
+      const insights = await getAppInsights(scan);
+      const insightByIndex = new Map((insights.apps || []).map((entry) => [entry.index, entry]));
+      const items = [];
+      for (const index of indexes) {
+        const entry = insightByIndex.get(index);
+        const app = scan.InstalledApps[index];
+        if (!app || !entry?.update) continue;
+        items.push({ app, update: entry.update });
+      }
+      if (items.length === 0) throw new ApiError(400, 'None of the selected apps have an available update');
+      const job = makeAppUpdateJob(items, { interactive: body.interactive === true });
+      sendJson(response, 202, { jobId: job.id });
+      return true;
+    }
+
+    if (request.method === 'POST' && pathname === '/api/apps/uninstall-batch') {
+      checkSameOrigin(request);
+      const body = await readJson(request);
+      if (body.confirm !== true) throw new ApiError(400, 'App uninstall requires explicit confirmation');
+      const scanId = assertScanId(body.scan);
+      const scan = await getScan(reportsDir, scanId);
+      const indexes = Array.isArray(body.indexes)
+        ? [...new Set(body.indexes.map(Number).filter((value) => Number.isInteger(value) && value >= 0))]
+        : [];
+      if (indexes.length === 0) throw new ApiError(400, 'Select at least one app');
+      if (indexes.length > 50) throw new ApiError(400, 'Too many apps in one uninstall');
+      const apps = indexes
+        .map((index) => scan.InstalledApps[index])
+        .filter((app) => app && app.UninstallString);
+      if (apps.length === 0) throw new ApiError(400, 'None of the selected apps have an uninstall command');
+      const job = makeUninstallBatchJob(apps);
+      sendJson(response, 202, { jobId: job.id });
       return true;
     }
 
