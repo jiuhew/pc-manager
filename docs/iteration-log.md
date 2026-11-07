@@ -38,6 +38,14 @@ Real-world lessons that shaped `pc-manager`.
 - Only one hash-confirmed duplicate (6.8 MB); do not over-promise dedupe savings.
 - Photo organization moved 1,499 items with zero failures; manifest + README generated.
 
+## 2026-11-07 — v0.1.1
+
+- `-Fast` excludes `WinSxS`, `Windows\Installer`, `SoftwareDistribution`, and `Package Cache`: C scan 132s -> 96s.
+- Parallel C/D/E on the same physical disk showed I/O contention (one run 290s vs 166s sequential, another sequential run 391s under load). Timing is load-dependent; made `-Parallel` opt-in and kept sequential as the default.
+- EXIF `DateTimeOriginal` works for JPEG/TIFF via `System.Drawing`; HEIC/CR3/RAW use ExifTool when available.
+- HTML report gained bar charts for top folders and file types.
+- Version bumped to 0.1.1.
+
 ## Tool improvements
 
 - Added cloud placeholder handling (`0x400000`, `0x1000`, `0x100000`).

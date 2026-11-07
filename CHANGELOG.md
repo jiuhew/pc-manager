@@ -7,9 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-07
+
 ### Added
 
 - Photo organizer reads EXIF `DateTimeOriginal` (0x9003) for JPEG/TIFF and falls back to the file timestamp; use `-NoExif` to disable.
+- Optional ExifTool support for HEIC, CR3, ARW, DNG, NEF, RAF and other RAW formats.
+- `-Fast` mode excludes `WinSxS`, `Windows\Installer`, `SoftwareDistribution`, and `Package Cache` (C: scan 132s -> 96s on the test machine).
+- `-Exclude` for custom scan exclusions.
+- Opt-in `-Parallel` scanning for drives on different physical disks.
+- HTML report bar charts for top folders and file types.
+
+### Changed
+
+- Default scan remains sequential; `-Parallel` only helps when drives are on different physical disks. When they share a disk, I/O contention can reduce or negate the benefit.
+- Version bumped to 0.1.1.
 
 ## [0.1.0] - 2026-11-07
 
@@ -39,5 +51,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Duplicate `%TEMP%` and `%LOCALAPPDATA%\Temp` entries are deduplicated.
 - Photo organizer skips already-organized `YYYY` and `YYYY-MM_*` directories.
 
-[Unreleased]: https://github.com/jiuhew/pc-manager/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/jiuhew/pc-manager/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/jiuhew/pc-manager/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/jiuhew/pc-manager/releases/tag/v0.1.0

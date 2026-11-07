@@ -37,7 +37,7 @@
 
 ## 已验证
 
-- Windows 11（10.0.26300），C/D/E 三盘全量扫描约 **166 秒**，约 **158 万文件**。
+- Windows 11（10.0.26300），C/D/E 三盘全量扫描约 **3–6 分钟**（受 OneDrive/索引/磁盘负载影响；空闲时约 166 秒），约 **158 万文件**；`-Fast` 模式 C 盘约 **96 秒**。
 - `scan` / `report`（Markdown + HTML）/ `clean` dry-run / `dedupe` 隔离 / `organize` 移动+junction / 照片整理 dry-run 均已自测通过。
 - 真实验证过：OneDrive 占位识别、junction 跳过、回收站清理、迅雷/优酷/爱奇艺缓存、旧安装包、照片按年月归类（1,499 项移动，0 失败）。
 
@@ -48,7 +48,10 @@
 - **垃圾分级**：`safe` / `elevated` / `confirm` / `review`，区分用户缓存、系统缓存、回收站、旧安装包、孤立残留。
 - **迁移建议**：Anaconda、WSL、Docker、GitHub、CUDA、SDK、游戏库等。
 - **重复文件检测**：大小分组 + SHA-256，重复项移动到隔离区，不直接删除。
-- **照片整理**：优先读取 EXIF 拍摄时间，按 `YYYY\YYYY-MM_事件` 归类，保留原始文件名，生成 manifest。
+- **快速模式**：`-Fast` 自动跳过 `WinSxS`、`Windows\Installer`、`SoftwareDistribution`、`Package Cache`，C 盘从 132s 降到 96s。
+- **自定义排除**：`-Exclude` 指定不扫描的目录，适合大型游戏/备份目录。
+- **可选并行**：`-Parallel` 多盘并行；不同物理磁盘时更快，同一物理磁盘会抢 I/O，收益有限甚至更慢，所以默认关闭。
+- **照片整理**：优先读取 EXIF 拍摄时间，按 `YYYY\YYYY-MM_事件` 归类，保留原始文件名，生成 manifest。JPEG/TIFF 直接读取；HEIC/CR3/RAW 安装 ExifTool 后支持。
 - **AI Skill 库**：扫描、清理、照片、文档、去重、迁移 6 个 skill，可直接安装到 OpenCode。
 - **纯 PowerShell**：Windows 原生，无需 Python/Node 运行时。
 
@@ -93,11 +96,13 @@ reports/scan-20261107-130000.md     # 人类可读报告
 ### scan
 
 ```powershell
-pwsh -File pc-manager.ps1 scan [-Drives C,D,E] [-Fast] [-Output reports] [-Json]
+pwsh -File pc-manager.ps1 scan [-Drives C,D,E] [-Fast] [-Exclude <dir1,dir2>] [-Parallel] [-Output reports] [-Json]
 ```
 
 - `-Drives`：默认所有固定磁盘。
-- `-Fast`：只统计顶层目录，不做扩展名/大文件/空目录扫描。
+- `-Fast`：只统计顶层目录，并跳过 `WinSxS`、`Windows\Installer`、`SoftwareDistribution`、`Package Cache`。
+- `-Exclude`：额外排除目录，逗号分隔。
+- `-Parallel`：多盘并行；同一物理磁盘上可能更慢，默认顺序。
 - `-Json`：同时把 JSON 输出到控制台。
 
 ### clean

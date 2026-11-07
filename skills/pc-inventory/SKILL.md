@@ -42,4 +42,16 @@ pwsh -File pc-manager.ps1 scan -Drives C,D,E
 pwsh -File pc-manager.ps1 scan -Drives C,D,E -Fast
 ```
 
-`-Fast` 只统计顶层目录，不做扩展名和大文件扫描，适合快速摸底。
+`-Fast` 只统计顶层目录，跳过 `WinSxS`、`Windows\Installer`、`SoftwareDistribution`、`Package Cache`，不做扩展名和大文件扫描，适合快速摸底。
+
+## 排除与并行
+
+```powershell
+# 额外排除大型游戏/备份目录
+pwsh -File pc-manager.ps1 scan -Drives C,D,E -Exclude "D:\Games","E:\Backup"
+
+# 多盘并行（仅在不同物理磁盘上有收益）
+pwsh -File pc-manager.ps1 scan -Drives C,D,E -Parallel
+```
+
+同一块物理磁盘上的多个分区并行会互相抢 I/O，可能比顺序扫描更慢。默认顺序扫描。

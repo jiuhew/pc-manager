@@ -1,4 +1,4 @@
-$script:PcManagerVersion = '0.1.0'
+$script:PcManagerVersion = '0.1.1'
 
 function Get-PcRoot {
     return $script:PcRoot
@@ -27,6 +27,8 @@ function Test-IsAdmin {
 
 $script:CloudFlags = 0x400000 -bor 0x1000 -bor 0x100000
 $script:ExifLoaded = $false
+$script:ExifToolChecked = $false
+$script:ExifTool = $null
 $script:MediaDateCache = @{}
 
 function Get-DirSizeMB {
@@ -130,6 +132,13 @@ function Read-PcConfig {
         maxExtensionItems = 80
         installerAgeDays  = 30
         minMigrationGB    = 5
+        fastExcludeDirs   = @(
+            "$env:SystemDrive\Windows\WinSxS",
+            "$env:SystemDrive\Windows\Installer",
+            "$env:SystemDrive\Windows\SoftwareDistribution",
+            "$env:ProgramData\Package Cache"
+        )
+        excludeDirs       = @()
         cloudRoots        = @(
             "$env:USERPROFILE\OneDrive",
             "$env:USERPROFILE\iCloudPhotos",
@@ -254,6 +263,27 @@ function Get-OrphanInfo {
     return $result
 }
 
+function Convert-ExifDateString {
+    param([string]$Text)
+    if (-not $Text) { return $null }
+    $dt = [datetime]::MinValue
+    $s = $Text.Trim()
+    if ([datetime]::TryParseExact($s, 'yyyy:MM:dd HH:mm:ss',
+            [System.Globalization.CultureInfo]::InvariantCulture,
+            [System.Globalization.DateTimeStyles]::None, [ref]$dt)) {
+        return $dt
+    }
+    return $null
+}
+
+function Get-ExifToolPath {
+    if ($script:ExifToolChecked) { return $script:ExifTool }
+    $script:ExifToolChecked = $true
+    $cmd = Get-Command exiftool -ErrorAction SilentlyContinue
+    if ($cmd) { $script:ExifTool = $cmd.Source }
+    return $script:ExifTool
+}
+
 function Get-MediaDate {
     [CmdletBinding()]
     param(
@@ -267,7 +297,11 @@ function Get-MediaDate {
     $result = $File.LastWriteTime
     if (-not $NoExif) {
         $ext = $File.Extension.ToLowerInvariant()
-        if ($ext -in @('.jpg', '.jpeg', '.tif', '.tiff')) {
+        $directExts = @('.jpg', '.jpeg', '.tif', '.tiff')
+        $rawExts = @('.heic', '.heif', '.cr3', '.arw', '.dng', '.nef', '.raf', '.rw2', '.orf', '.srw', '.pef')
+        $found = $false
+
+        if ($directExts -contains $ext) {
             if (-not $script:ExifLoaded) {
                 try {
                     Add-Type -AssemblyName System.Drawing -ErrorAction Stop
@@ -284,19 +318,28 @@ function Get-MediaDate {
                         try {
                             $prop = $img.GetPropertyItem($id)
                             $text = [System.Text.Encoding]::ASCII.GetString($prop.Value).Trim([char]0).Trim()
-                            $dt = [datetime]::MinValue
-                            if ([datetime]::TryParseExact($text, 'yyyy:MM:dd HH:mm:ss',
-                                    [System.Globalization.CultureInfo]::InvariantCulture,
-                                    [System.Globalization.DateTimeStyles]::None, [ref]$dt)) {
-                                $result = $dt
-                                break
-                            }
+                            $dt = Convert-ExifDateString $text
+                            if ($dt) { $result = $dt; $found = $true; break }
                         } catch { }
                     }
                 } catch { }
                 finally {
                     if ($img) { $img.Dispose() }
                 }
+            }
+        }
+
+        # RAW/HEIC and fallback: use ExifTool when available.
+        if (-not $found -and (($rawExts -contains $ext) -or ($directExts -contains $ext))) {
+            $exifTool = Get-ExifToolPath
+            if ($exifTool) {
+                try {
+                    $out = & $exifTool -s3 -DateTimeOriginal -d '%Y:%m:%d %H:%M:%S' $File.FullName 2>$null
+                    if ($out) {
+                        $dt = Convert-ExifDateString ([string]$out)
+                        if ($dt) { $result = $dt; $found = $true }
+                    }
+                } catch { }
             }
         }
     }

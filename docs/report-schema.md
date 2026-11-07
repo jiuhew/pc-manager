@@ -12,6 +12,8 @@
 | `User` | string | Current user |
 | `OS` | string | OS version string |
 | `FastMode` | bool | Whether `-Fast` was used |
+| `ParallelMode` | bool | Whether `-Parallel` was used |
+| `ExcludeDirs` | array of strings | Additional directories excluded by `-Exclude` |
 | `ScanSeconds` | number | Total scan time |
 | `Drives` | array | Per-drive inventory |
 | `InstalledApps` | array | Top installed apps by estimated size |
@@ -36,6 +38,7 @@
 | `LargeFiles` | array | `{Path, SizeMB, Modified}` |
 | `EmptyDirs` | array of strings | Empty directories |
 | `ReparsePoints` | array of strings | Junctions/symlinks |
+| `ExcludedDirs` | array of strings | Directories skipped by `-Fast` or `-Exclude` |
 | `Cloud` | array | `{Path, LogicalGB, LocalGB, Files, LocalFiles}` |
 | `ScanSeconds` | number | Time for this drive |
 

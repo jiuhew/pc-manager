@@ -5,7 +5,9 @@ param(
     [string]$Command = 'help',
 
     [string[]]$Drives,
+    [string[]]$Exclude,
     [switch]$Fast,
+    [switch]$Parallel,
     [string]$ScanPath,
     [string]$Output,
     [ValidateSet('md', 'html', 'json')]
@@ -40,7 +42,7 @@ function Write-Usage {
 pc-manager - fast Windows disk inventory and AI-ready reports
 
 Usage:
-  pc-manager scan [-Drives C,D,E] [-Fast] [-Output reports]
+  pc-manager scan [-Drives C,D,E] [-Fast] [-Exclude <dir1,dir2>] [-Parallel] [-Output reports]
   pc-manager report -ScanPath reports\scan-xxx.json [-Output report.md] [-Format md|html]
   pc-manager clean [-ScanPath scan.json] [-Category cache|system|installers|orphans|recycle] [-Execute] [-Admin]
   pc-manager organize -Source C:\Path -Destination D:\Path [-Execute]
@@ -56,14 +58,14 @@ Safety:
 
 function Get-ScanFromPath {
     param([string]$Path)
-    if (-not $Path) { return (Invoke-PcScan -Drives $Drives -Fast:$Fast) }
+    if (-not $Path) { return (Invoke-PcScan -Drives $Drives -Fast:$Fast -ExcludeDirs $Exclude -Parallel:$Parallel) }
     if (-not (Test-Path -LiteralPath $Path)) { throw "Input not found: $Path" }
     return (Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json)
 }
 
 switch ($Command) {
     'scan' {
-        $scan = Invoke-PcScan -Drives $Drives -Fast:$Fast
+        $scan = Invoke-PcScan -Drives $Drives -Fast:$Fast -ExcludeDirs $Exclude -Parallel:$Parallel
         $scan = Add-PcAnalysis -Scan $scan
         $outDir = if ($Output) { $Output } else { Join-Path $script:PcRoot 'reports' }
         New-Item -ItemType Directory -Path $outDir -Force | Out-Null

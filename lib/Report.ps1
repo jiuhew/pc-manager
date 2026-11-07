@@ -42,6 +42,10 @@ function New-MarkdownReport {
             $rows += , @($f.Name, $f.SizeGB, $f.Files)
         }
         [void]$sb.Append((New-MdTable -Headers @('Folder', 'Size GB', 'Files') -Rows $rows))
+        if ($d.PSObject.Properties['ExcludedDirs'] -and @($d.ExcludedDirs).Count -gt 0) {
+            [void]$sb.AppendLine('> Fast mode excludes: ' + ($d.ExcludedDirs -join ', '))
+            [void]$sb.AppendLine()
+        }
 
         if ($d.Extensions.Count -gt 0) {
             [void]$sb.AppendLine('### File types')

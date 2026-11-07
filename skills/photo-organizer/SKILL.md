@@ -32,7 +32,7 @@ description: 当用户要整理照片/视频、按年份/事件分类、统一�
 ## 拍摄时间
 
 默认读取 JPEG/TIFF 的 EXIF `DateTimeOriginal`（0x9003），比文件修改时间更准确。
-RAW/HEIC 等读不到 EXIF 时自动回退到文件时间。可用 `-NoExif` 关闭。
+HEIC/CR3/RAW 需要系统里有 `exiftool`（安装后自动使用）；没有时回退到文件时间。可用 `-NoExif` 关闭。
 
 ## 工作流
 

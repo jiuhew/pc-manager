@@ -4,13 +4,23 @@ function Invoke-DriveScan {
         [Parameter(Mandatory)][string]$Drive,
         [switch]$Fast,
         [int]$LargeFileMB = 500,
-        [int]$MaxLargeFiles = 200
+        [int]$MaxLargeFiles = 200,
+        [string[]]$ExcludeDirs,
+        $Config
     )
 
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     $root = "$Drive\"
     $info = Get-DriveInfo -Drive $Drive
     if (-not $info) { throw "Drive not found: $Drive" }
+
+    if (-not $Config) { $Config = Read-PcConfig }
+    $excludes = @()
+    if ($Fast) { $excludes += @($Config.fastExcludeDirs) }
+    $excludes += @($Config.excludeDirs)
+    $excludes += @($ExcludeDirs)
+    $excludes = @($excludes | Where-Object { $_ } | Select-Object -Unique)
+    $excludedDirs = [System.Collections.Generic.List[string]]::new()
 
     $totalSize = 0L
     $totalFiles = 0
@@ -36,6 +46,11 @@ function Invoke-DriveScan {
                     $attr = [int][System.IO.File]::GetAttributes($e)
                     if (($attr -band 0x10) -ne 0) {
                         if ($e -like '*\System Volume Information*') { continue }
+                        $skip = $false
+                        foreach ($pat in $excludes) {
+                            if ($e.StartsWith($pat, [System.StringComparison]::OrdinalIgnoreCase)) { $skip = $true; break }
+                        }
+                        if ($skip) { $excludedDirs.Add($e); continue }
                         if (($attr -band 0x400) -ne 0 -and (($attr -band $script:CloudFlags) -eq 0)) {
                             $reparsePoints.Add($e)
                             continue
@@ -103,8 +118,7 @@ function Invoke-DriveScan {
 
     $cloud = @()
     if ($Drive -eq $env:SystemDrive) {
-        $config = Read-PcConfig
-        foreach ($p in $config.cloudRoots) {
+        foreach ($p in $Config.cloudRoots) {
             $u = Get-CloudUsage -Path $p
             if ($u) { $cloud += $u }
         }
@@ -125,6 +139,7 @@ function Invoke-DriveScan {
         LargeFiles    = @($large | Sort-Object SizeMB -Descending)
         EmptyDirs     = @($emptyDirs)
         ReparsePoints = @($reparsePoints)
+        ExcludedDirs  = @($excludedDirs)
         Cloud         = @($cloud)
         ScanSeconds   = [math]::Round($sw.Elapsed.TotalSeconds, 1)
     }
@@ -134,7 +149,9 @@ function Invoke-PcScan {
     [CmdletBinding()]
     param(
         [string[]]$Drives,
-        [switch]$Fast
+        [switch]$Fast,
+        [string[]]$ExcludeDirs,
+        [switch]$Parallel
     )
 
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -152,10 +169,27 @@ function Invoke-PcScan {
     }
     $normalized = @($normalized | Select-Object -Unique)
 
-    $driveResults = @()
-    foreach ($d in $normalized) {
-        Write-Host "[pc-manager] scanning $d ..."
-        $driveResults += Invoke-DriveScan -Drive $d -Fast:$Fast -LargeFileMB $config.largeFileMB -MaxLargeFiles $config.maxLargeFiles
+    if (-not $Parallel -or $normalized.Count -eq 1 -or $PSVersionTable.PSVersion.Major -lt 7) {
+        $driveResults = @()
+        foreach ($d in $normalized) {
+            Write-Host "[pc-manager] scanning $d ..."
+            $driveResults += Invoke-DriveScan -Drive $d -Fast:$Fast -LargeFileMB $config.largeFileMB -MaxLargeFiles $config.maxLargeFiles -ExcludeDirs $ExcludeDirs -Config $config
+        }
+    } else {
+        Write-Host ("[pc-manager] scanning {0} in parallel ..." -f ($normalized -join ', '))
+        $pcRoot = $script:PcRoot
+        $fastFlag = [bool]$Fast
+        $excludeList = @($ExcludeDirs)
+        $driveResults = $normalized | ForEach-Object -Parallel {
+            $script:PcRoot = $using:pcRoot
+            . (Join-Path $using:pcRoot 'lib\Core.ps1')
+            . (Join-Path $using:pcRoot 'lib\Inventory.ps1')
+            $cfg = Read-PcConfig
+            $fast = $using:fastFlag
+            $ex = $using:excludeList
+            Invoke-DriveScan -Drive $_ -Fast:$fast -LargeFileMB $cfg.largeFileMB -MaxLargeFiles $cfg.maxLargeFiles -ExcludeDirs $ex -Config $cfg
+        } -ThrottleLimit ([Math]::Min($normalized.Count, 4))
+        $driveResults = @($driveResults | Sort-Object Id)
     }
 
     Write-Host '[pc-manager] reading installed apps and orphan records ...'
@@ -170,6 +204,8 @@ function Invoke-PcScan {
         User          = $env:USERNAME
         OS            = [System.Environment]::OSVersion.VersionString
         FastMode      = [bool]$Fast
+        ParallelMode  = [bool]$Parallel
+        ExcludeDirs   = @($ExcludeDirs)
         ScanSeconds   = [math]::Round($sw.Elapsed.TotalSeconds, 1)
         Drives        = @($driveResults)
         InstalledApps = @($apps)
