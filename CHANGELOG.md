@@ -5,6 +5,21 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-11-07
+
+### Changed
+
+- AI suggestions now inspect the machine's drive topology before planning.
+- Single-drive machines no longer receive cross-drive migration or `D:\`/`E:\` media targets; media plans use `%USERPROFILE%\Videos` and `Pictures`.
+- Migration candidates are generated only for existing data drives with enough free space, and include the target free space.
+- Updated the `storage-strategy`, `photo-organizer`, and `app-migration` skills plus the storage strategy doc with single-drive guidance.
+- Version bumped to 0.2.2.
+
+### Fixed
+
+- Media plans skip no-op moves when the source is already the user `Videos`/`Pictures` folder.
+- Single-drive media audits use a P2 `media-system-single` finding instead of the P1 "move media off the system drive" advice.
+
 ## [0.2.1] - 2026-11-07
 
 ### Fixed
@@ -115,7 +130,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Duplicate `%TEMP%` and `%LOCALAPPDATA%\Temp` entries are deduplicated.
 - Photo organizer skips already-organized `YYYY` and `YYYY-MM_*` directories.
 
-[Unreleased]: https://github.com/jiuhew/pc-manager/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/jiuhew/pc-manager/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/jiuhew/pc-manager/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/jiuhew/pc-manager/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/jiuhew/pc-manager/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/jiuhew/pc-manager/compare/v0.1.1...v0.1.2
